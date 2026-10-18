@@ -1,43 +1,106 @@
-import type { Res4, TrainingBuilding } from "./types";
-import { BUILDINGS, MERCH, UNITS } from "./data";
+import type { Res4, TrainingBuilding, Unit } from "./types";
+import { BUILDINGS, CELEBRATIONS, MERCH, UNITS } from "./data";
 import { fmt, fmtTime, toNum } from "./calc/format";
-import { buildingTotals, type BuildRow } from "./calc/buildings";
-import { maxTroops, trainingTime, troopsForTime } from "./calc/troops";
+import { buildingTotals } from "./calc/buildings";
+import { celebrationCost } from "./calc/celebrations";
+import { maxTroopMix, mixDuration, trainingTime, troopMixForTime, type TimedRow } from "./calc/troops";
 import { npcTargets, planNeeds, storageCaps } from "./calc/npc";
 import { merchantsNeeded, travelSeconds } from "./calc/merchants";
-import { loadState, saveState, type SavedState } from "./storage";
+import { loadStore, newId, newVillage, saveStore, type Store, type TroopRow, type VillageState } from "./storage";
 
-const BLDG_LABEL: Record<TrainingBuilding, string> = { B: "Barracks level", S: "Stable level", W: "Workshop level", R: "Residence or palace level" };
+const TRAIN_NAME: Record<TrainingBuilding, string> = { B: "Barracks", S: "Stable", W: "Workshop", R: "Residence or palace" };
+const TRAIN_ORDER: TrainingBuilding[] = ["B", "S", "W", "R"];
 const NAMES = ["Wood", "Clay", "Iron", "Crop"];
 const COLORS = ["var(--wood)", "var(--clay)", "var(--iron)", "var(--crop)"];
 const RES = [0, 1, 2, 3] as const;
+/** Plain inputs saved per village as typed. */
+const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "hours", "mins", "dist", "merchCap", "merchSpeed"];
 const $ = <T extends HTMLElement = HTMLInputElement>(id: string) => document.getElementById(id) as T;
 const num = (id: string) => toNum($(id).value);
 const res4 = (f: (i: number) => number) => RES.map(f) as Res4;
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+/** Blank or invalid ratio counts as 1; 0 leaves the row out. */
+const ratio = (s: string) => { const n = parseFloat(String(s).replace(",", ".")); return isFinite(n) && n >= 0 ? n : 1; };
 
 /* ---- state ---- */
-let mode = "max";
-let builds: BuildRow[] = [];
+const buildingOf = (tribe: string, unit: number) => UNITS[tribe]?.[unit]?.building;
+let store: Store = loadStore(buildingOf) ?? (() => {
+  const id = newId();
+  return { version: 2, current: id, villages: { [id]: newVillage("My village", Object.keys(UNITS)[0], "1") }, overrides: {} } as Store;
+})();
+if (!store.villages[store.current]) store.current = Object.keys(store.villages)[0];
+let v: VillageState = store.villages[store.current];
 
-const tribeSel = $<HTMLSelectElement>("tribe"), unitSel = $<HTMLSelectElement>("unit");
+const tribeSel = $<HTMLSelectElement>("tribe"), villageSel = $<HTMLSelectElement>("village"), statSel = $<HTMLSelectElement>("statUnit");
 Object.keys(UNITS).forEach(t => tribeSel.add(new Option(t, t)));
-function fillUnits() { unitSel.innerHTML = ""; UNITS[tribeSel.value].forEach((u, i) => unitSel.add(new Option(u.name, String(i)))); }
-function loadUnit() {
-  const u = UNITS[tribeSel.value][Number(unitSel.value)];
+
+/** Unit stats with the user's edits applied. */
+function unitStats(tribe: string, i: number): Unit {
+  const base = UNITS[tribe][i], o = store.overrides[tribe]?.[i];
+  return o ? { ...base, ...o } : base;
+}
+function trainOf(b: TrainingBuilding) { return v.train[b] ??= { lvl: "1", bonus: "" }; }
+
+/* ---- villages ---- */
+function fillVillages() {
+  villageSel.innerHTML = "";
+  for (const [id, s] of Object.entries(store.villages)) villageSel.add(new Option(s.name, id));
+  villageSel.value = store.current;
+  $<HTMLButtonElement>("deleteVillage").disabled = Object.keys(store.villages).length < 2;
+}
+function switchVillage(id: string) {
+  save();
+  store.current = id; v = store.villages[id];
+  applyVillage();
+}
+/** Puts the current village's state into the page. */
+function applyVillage() {
+  if (!UNITS[v.tribe]) v.tribe = Object.keys(UNITS)[0];
+  tribeSel.value = v.tribe;
+  $("speed").value = v.speed || "1";
+  $("pref").value = v.pref || "3";
+  FIELDS.forEach(f => $(f).value = "");
+  loadMerchant();
+  $("hours").value = "8"; $("mins").value = "0";
+  FIELDS.forEach(f => { const s = v.fields[f]; if (s != null && s !== "") $(f).value = s; });
+  v.celebs = CELEBRATIONS.map((_, i) => v.celebs?.[i] ?? "");
+  v.celebs.forEach((s, i) => $("celeb" + i).value = s);
+  const units = UNITS[v.tribe];
+  v.troops = (v.troops ?? []).filter(r => units[r.unit]);
+  if (!v.troops.length) v.troops = [{ unit: 0, ratio: "1", count: "100" }];
+  v.builds = (v.builds ?? []).filter(r => BUILDINGS[r.b]);
+  v.train ??= {};
+  fillVillages();
+  fillStatUnits(v.troops[0].unit);
+  renderBuilds();
+  setMode(v.mode || "max");
+}
+
+/* ---- unit stats ---- */
+function fillStatUnits(sel: number) {
+  statSel.innerHTML = "";
+  UNITS[v.tribe].forEach((u, i) => statSel.add(new Option(u.name, String(i))));
+  statSel.value = String(sel);
+  showStats();
+}
+function showStats() {
+  const u = unitStats(v.tribe, Number(statSel.value));
   for (let i = 0; i < 4; i++) $("cost" + i).value = String(u.cost[i]);
   $("upkeep").value = String(u.upkeep);
   $("baseTime").value = u.time ? String(u.time) : "";
-  $("lvlLabel").textContent = BLDG_LABEL[u.building];
+}
+function saveStats() {
+  (store.overrides[v.tribe] ??= {})[statSel.value] = { cost: res4(i => num("cost" + i)), upkeep: num("upkeep"), time: num("baseTime") };
 }
 function loadMerchant() { const m = MERCH[tribeSel.value]; $("merchCap").value = String(m.capacity); $("merchSpeed").value = String(m.speed); }
 
+/* ---- mode and rows ---- */
 function setMode(m: string) {
-  mode = m;
+  v.mode = m;
   document.querySelectorAll<HTMLButtonElement>(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m ? "true" : "false"));
   $("troopFields").hidden = m === "none";
-  $("countWrap").hidden = m !== "count";
-  $("hoursWrap").hidden = m !== "time";
-  $("minsWrap").hidden = m !== "time";
+  $("timeWrap").hidden = m !== "time";
+  renderTroops();
   calc();
 }
 
@@ -46,20 +109,52 @@ function buildOptions(sel: number) {
 }
 function renderBuilds() {
   const box = $("builds");
-  if (!builds.length) { box.innerHTML = `<p class="hint" style="margin-top:0">No upgrades yet. Add a building to include its cost in the plan.</p>`; return; }
-  box.innerHTML = builds.map((r, i) => `
+  if (!v.builds.length) { box.innerHTML = `<p class="hint" style="margin-top:0">No upgrades yet. Add a building to include its cost in the plan.</p>`; return; }
+  box.innerHTML = v.builds.map((r, i) => `
     <div class="brow" data-i="${i}">
       <div class="brow-top">
         <div><label for="bsel${i}">Building</label><select id="bsel${i}" data-f="b">${buildOptions(r.b)}</select></div>
         <button type="button" class="remove" data-remove="${i}" aria-label="Remove ${BUILDINGS[r.b].name}">Remove</button>
       </div>
       <div class="brow-nums">
-        <div><label for="bfrom${i}">Current level</label><input id="bfrom${i}" data-f="from" inputmode="numeric" value="${r.from}"></div>
-        <div><label for="bto${i}">Target level</label><input id="bto${i}" data-f="to" inputmode="numeric" value="${r.to}"></div>
-        <div><label for="bqty${i}">How many</label><input id="bqty${i}" data-f="qty" inputmode="numeric" value="${r.qty}"></div>
+        <div><label for="bfrom${i}">Current level</label><input id="bfrom${i}" data-f="from" inputmode="numeric" value="${esc(String(r.from))}"></div>
+        <div><label for="bto${i}">Target level</label><input id="bto${i}" data-f="to" inputmode="numeric" value="${esc(String(r.to))}"></div>
+        <div><label for="bqty${i}">How many</label><input id="bqty${i}" data-f="qty" inputmode="numeric" value="${esc(String(r.qty))}"></div>
       </div>
       <div class="cost-line" id="bcost${i}"></div>
     </div>`).join("");
+}
+
+function renderTroops() {
+  const units = UNITS[v.tribe], many = v.troops.length > 1, counting = v.mode === "count";
+  $("troops").innerHTML = v.troops.map((r, i) => {
+    const opts = units.map((u, k) => `<option value="${k}"${k === r.unit ? " selected" : ""}>${u.name}</option>`).join("");
+    const field = counting
+      ? `<div><label for="tcount${i}">Number of units</label><input id="tcount${i}" data-f="count" inputmode="numeric" autocomplete="off" value="${esc(r.count)}"></div>`
+      : `<div><label for="tratio${i}">Ratio</label><input id="tratio${i}" data-f="ratio" inputmode="decimal" autocomplete="off" value="${esc(r.ratio)}"></div>`;
+    return `
+    <div class="brow" data-i="${i}">
+      <div class="brow-top">
+        <div><label for="tunit${i}">Unit</label><select id="tunit${i}" data-f="unit">${opts}</select></div>
+        ${many ? `<button type="button" class="remove" data-remove="${i}" aria-label="Remove ${esc(units[r.unit].name)}">Remove</button>` : ""}
+      </div>
+      ${many || counting ? `<div class="brow-nums">${field}<div class="trow-out" id="tout${i}"></div></div>` : ""}
+    </div>`;
+  }).join("");
+  $("ratioHint").hidden = !many || counting;
+  renderTrainFields();
+}
+
+/** Level and bonus inputs for each training building the rows use. */
+function renderTrainFields() {
+  const used = TRAIN_ORDER.filter(b => v.troops.some(r => UNITS[v.tribe][r.unit].building === b));
+  $("trainFields").innerHTML = used.map(b => {
+    const t = trainOf(b), name = TRAIN_NAME[b];
+    return `<div class="grid2 gap">
+      <div><label for="tlvl${b}">${name} level</label><input id="tlvl${b}" data-b="${b}" data-f="lvl" inputmode="numeric" autocomplete="off" value="${esc(t.lvl)}"></div>
+      <div><label for="tbon${b}">${name} time bonus %</label><input id="tbon${b}" data-b="${b}" data-f="bonus" inputmode="numeric" autocomplete="off" value="${esc(t.bonus)}"></div>
+    </div>`;
+  }).join("");
 }
 
 /* ---- main calculation ---- */
@@ -70,7 +165,7 @@ function calc() {
   const speed = parseInt($("speed").value, 10) || 1;
 
   /* buildings */
-  const bt = buildingTotals(builds, BUILDINGS);
+  const bt = buildingTotals(v.builds, BUILDINGS);
   const { tot: bTot, peak: bPeak, sum: bSum } = bt;
   bt.rows.forEach((r, i) => {
     const el = $("bcost" + i);
@@ -80,29 +175,49 @@ function calc() {
       `<span>Total ${fmt(r.cost.reduce((a, b) => a + b, 0))}</span>`;
   });
 
-  /* troops */
-  const cost = res4(i => num("cost" + i));
-  const cSum = cost.reduce((a, b) => a + b, 0);
-  const upkeep = num("upkeep");
-  const perUnit = trainingTime(num("baseTime"), num("lvl"), speed, num("bonus"));
-  const unitName = unitSel.options[unitSel.selectedIndex].text;
-  const haveTotal = have.reduce((a, b) => a + b, 0);
-  let n = 0, capLimited = -1;
-  if (mode === "max") ({ count: n, capLimited } = maxTroops(haveTotal, bTot, cost, caps));
-  else if (mode === "count") n = num("count");
-  else if (mode === "time") n = troopsForTime((num("hours") * 60 + num("mins")) * 60, perUnit);
+  /* celebrations */
+  const cc = celebrationCost(CELEBRATIONS, v.celebs.map(toNum));
+  const ccSum = cc.tot.reduce((a, b) => a + b, 0);
+  const otherTot = res4(i => bTot[i] + cc.tot[i]);
 
-  if (mode !== "none") {
-    const parts = [`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${unitName}</span></div>`];
-    if (perUnit > 0) {
-      parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(perUnit)}</strong></div>`);
-      parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(perUnit * n)}</strong></div>`);
-    } else parts.push(`<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
-    parts.push(`<div class="stat"><span>Upkeep</span><strong>${fmt(n * upkeep)} crop/h</strong></div>`);
+  /* troops */
+  const haveTotal = have.reduce((a, b) => a + b, 0);
+  const rows = v.troops.map(r => {
+    const u = unitStats(v.tribe, r.unit), t = trainOf(u.building);
+    return { u, perUnit: trainingTime(u.time, toNum(t.lvl), speed, toNum(t.bonus)), weight: ratio(r.ratio), group: u.building };
+  });
+  const timed: TimedRow[] = rows;
+  let counts = rows.map(() => 0), capLimited = -1;
+  if (v.mode === "max") ({ counts, capLimited } = maxTroopMix(rows.map(r => ({ cost: r.u.cost, weight: r.weight })), haveTotal, otherTot, caps));
+  else if (v.mode === "count") counts = v.troops.map(r => toNum(r.count));
+  else if (v.mode === "time") counts = troopMixForTime(timed, (num("hours") * 60 + num("mins")) * 60);
+  if (v.mode === "none") counts = rows.map(() => 0);
+
+  if (v.mode !== "none") {
+    const upkeep = rows.reduce((s, r, i) => s + r.u.upkeep * counts[i], 0);
+    const parts = [];
+    if (rows.length === 1) {
+      const [r] = rows, n = counts[0];
+      parts.push(`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${esc(r.u.name)}</span></div>`);
+      if (r.perUnit > 0) {
+        parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(r.perUnit)}</strong></div>`);
+        parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(r.perUnit * n)}</strong></div>`);
+      } else parts.push(`<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
+    } else {
+      rows.forEach((r, i) => {
+        const el = $("tout" + i); if (!el) return;
+        el.innerHTML = `<b>${fmt(counts[i])}</b> ` + (r.perUnit > 0 ? `· each ${fmtTime(r.perUnit)} · all ${fmtTime(r.perUnit * counts[i])}` : `· <span class="warn">no base time</span>`);
+      });
+      parts.push(`<div><div class="big">${fmt(counts.reduce((a, b) => a + b, 0))}</div><span class="hint" style="margin:0">units in total</span></div>`);
+      parts.push(rows.every(r => r.perUnit > 0)
+        ? `<div class="stat"><span>All done in</span><strong>${fmtTime(mixDuration(timed, counts))}</strong></div>`
+        : `<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
+    }
+    parts.push(`<div class="stat"><span>Upkeep</span><strong>${fmt(upkeep)} crop/h</strong></div>`);
     $("troopOut").innerHTML = parts.join("");
   }
-  const tN = mode === "none" ? 0 : n;
-  const need = res4(i => bTot[i] + cost[i] * tN);
+  const need = res4(i => otherTot[i] + rows.reduce((s, r, k) => s + r.u.cost[i] * counts[k], 0));
+  const troopSum = rows.reduce((s, r, k) => s + r.u.cost.reduce((a, b) => a + b, 0) * counts[k], 0);
 
   /* verdict */
   const { needSum, shortEach, shortSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need);
@@ -136,12 +251,17 @@ function calc() {
   /* notes */
   const notes = [];
   if (bSum > 0) notes.push(`Buildings: ${fmt(bSum)}.`);
-  if (tN > 0) notes.push(`Troops: ${fmt(tN * cSum)}.`);
-  if (mode === "max" && capLimited >= 0) notes.push(`<span class="warn">Your ${capLimited === 3 ? "granary" : "warehouse"} caps the troop count: more ${NAMES[capLimited].toLowerCase()} wouldn't fit.</span>`);
+  if (ccSum > 0) notes.push(`Celebrations: ${fmt(ccSum)}.`);
+  if (troopSum > 0) notes.push(`Troops: ${fmt(troopSum)}.`);
+  if (v.mode === "max" && capLimited >= 0) notes.push(`<span class="warn">Your ${capLimited === 3 ? "granary" : "warehouse"} caps the troop count: more ${NAMES[capLimited].toLowerCase()} wouldn't fit.</span>`);
   const over = RES.filter(i => caps[i] !== Infinity && need[i] > caps[i]);
   if (over.length) notes.push(`<span class="warn">${over.map(i => NAMES[i]).join(", ")} needed is more than your storage holds at once, so you'll have to do this in more than one round.</span>`);
-  const peakOver: number[] = RES.filter(i => caps[i] !== Infinity && bPeak[i] > caps[i]);
-  if (peakOver.length) notes.push(`<span class="warn">At least one upgrade level costs more ${peakOver.map(i => NAMES[i].toLowerCase()).join(" and ")} than your storage can hold. Upgrade the ${peakOver.includes(3) && peakOver.length === 1 ? "granary" : peakOver.includes(3) ? "warehouse and granary" : "warehouse"} first.</span>`);
+  const peakOver: number[] = RES.filter(i => caps[i] !== Infinity && Math.max(bPeak[i], cc.peak[i]) > caps[i]);
+  if (peakOver.length) {
+    const bOver = peakOver.some(i => bPeak[i] > caps[i]), cOver = peakOver.some(i => cc.peak[i] > caps[i]);
+    const what = bOver && cOver ? "upgrade level or celebration" : cOver ? "celebration" : "upgrade level";
+    notes.push(`<span class="warn">At least one ${what} costs more ${peakOver.map(i => NAMES[i].toLowerCase()).join(" and ")} than your storage can hold. Upgrade the ${peakOver.includes(3) && peakOver.length === 1 ? "granary" : peakOver.includes(3) ? "warehouse and granary" : "warehouse"} first.</span>`);
+  }
   if (!wh || !gr) notes.push("Add warehouse and granary capacity so the plan respects storage.");
   $("planNote").innerHTML = notes.join(" ");
 
@@ -154,7 +274,7 @@ function calc() {
   if (needSum === 0) send = `<p class="zero">Nothing to send yet.</p>`;
   else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything.</p>`;
   else {
-    const exact = shortEach.map((v, i) => v > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(v)}` : null).filter(Boolean).join(", ");
+    const exact = shortEach.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
     send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(shortSum)} total, ${fmt(merchants(shortSum))} merchant${merchants(shortSum) === 1 ? "" : "s"}.</p>`;
     if (!coveredNpc) {
       const gap = needSum - haveTotal;
@@ -164,61 +284,94 @@ function calc() {
   }
   $("sendBox").innerHTML = send;
 
-  $("unitWarn").innerHTML = tribeSel.value === "Spartans"
+  $("unitWarn").innerHTML = v.tribe === "Spartans"
     ? `<span class="warn">Spartan costs are unverified and base times are blank. Check them against your game.</span>` : "";
 
   save();
 }
 
 /* ---- persistence ---- */
-const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "lvl", "count", "hours", "mins", "bonus", "dist", "merchCap", "merchSpeed"];
 function save() {
-  const s: SavedState = { tribe: tribeSel.value, unit: unitSel.value, speed: $("speed").value, pref: $("pref").value, mode, builds };
-  FIELDS.forEach(f => s[f] = $(f).value);
-  saveState(s);
-}
-function restore() {
-  const s = loadState();
-  if (s && s.tribe && UNITS[s.tribe]) tribeSel.value = s.tribe;
-  fillUnits();
-  if (s && s.unit != null && unitSel.options[Number(s.unit)]) unitSel.value = s.unit;
-  loadUnit(); loadMerchant();
-  $("lvl").value = "1"; $("count").value = "100"; $("hours").value = "8"; $("mins").value = "0";
-  if (s) {
-    FIELDS.forEach(f => { if (s[f] != null && s[f] !== "") $(f).value = String(s[f]); });
-    if (s.speed) $("speed").value = s.speed;
-    if (s.pref) $("pref").value = s.pref;
-    if (Array.isArray(s.builds)) builds = s.builds.filter(r => BUILDINGS[r.b]);
-    if (s.mode) mode = s.mode;
-  }
+  v.tribe = tribeSel.value; v.speed = $("speed").value; v.pref = $("pref").value;
+  FIELDS.forEach(f => v.fields[f] = $(f).value);
+  saveStore(store);
 }
 
 /* ---- events ---- */
-tribeSel.addEventListener("change", () => { fillUnits(); loadUnit(); loadMerchant(); calc(); });
-unitSel.addEventListener("change", () => { loadUnit(); calc(); });
-$("resetUnit").addEventListener("click", () => { loadUnit(); calc(); });
+villageSel.addEventListener("change", () => switchVillage(villageSel.value));
+$("newVillage").addEventListener("click", () => {
+  const name = prompt("Name of the new village", `Village ${Object.keys(store.villages).length + 1}`);
+  if (name === null) return;
+  const id = newId();
+  store.villages[id] = newVillage(name.trim() || `Village ${Object.keys(store.villages).length + 1}`, v.tribe, v.speed);
+  switchVillage(id);
+});
+$("renameVillage").addEventListener("click", () => {
+  const name = prompt("New name for this village", v.name);
+  if (name === null || !name.trim()) return;
+  v.name = name.trim(); fillVillages(); save();
+});
+$("deleteVillage").addEventListener("click", () => {
+  if (Object.keys(store.villages).length < 2 || !confirm(`Delete “${v.name}”? Its saved plan will be lost.`)) return;
+  delete store.villages[store.current];
+  store.current = Object.keys(store.villages)[0]; v = store.villages[store.current];
+  applyVillage();
+});
+
+tribeSel.addEventListener("change", () => {
+  v.tribe = tribeSel.value;
+  v.troops = [{ unit: 0, ratio: "1", count: v.troops[0]?.count ?? "100" }];
+  loadMerchant(); fillStatUnits(0); renderTroops(); calc();
+});
 $("speed").addEventListener("change", calc);
 $("pref").addEventListener("change", calc);
-document.querySelectorAll("main > section input, details input").forEach(el => el.addEventListener("input", calc));
+FIELDS.forEach(f => $(f).addEventListener("input", calc));
+CELEBRATIONS.forEach((_, i) => $("celeb" + i).addEventListener("input", e => { v.celebs[i] = (e.target as HTMLInputElement).value; calc(); }));
+["cost0", "cost1", "cost2", "cost3", "upkeep", "baseTime"].forEach(f => $(f).addEventListener("input", () => { saveStats(); calc(); }));
+statSel.addEventListener("change", showStats);
+$("resetUnit").addEventListener("click", () => { delete store.overrides[v.tribe]?.[statSel.value]; showStats(); calc(); });
 document.querySelectorAll<HTMLButtonElement>(".seg button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode!)));
+
 $("addBuild").addEventListener("click", () => {
-  builds.push({ b: 0, from: 0, to: 1, qty: 1 });
+  v.builds.push({ b: 0, from: 0, to: 1, qty: 1 });
   renderBuilds(); calc();
-  const sel = $("bsel" + (builds.length - 1)); if (sel) sel.focus();
+  const sel = $("bsel" + (v.builds.length - 1)); if (sel) sel.focus();
 });
 $("builds").addEventListener("input", e => {
   const t = e.target as HTMLInputElement;
   const row = t.closest<HTMLElement>(".brow"); if (!row) return;
-  const i = +row.dataset.i!, f = t.dataset.f as keyof BuildRow;
-  if (f === "b") builds[i].b = +t.value; else builds[i][f] = t.value;
+  const i = +row.dataset.i!, f = t.dataset.f as "b" | "from" | "to" | "qty";
+  if (f === "b") v.builds[i].b = +t.value; else v.builds[i][f] = t.value;
   calc();
 });
 $("builds").addEventListener("change", e => { if ((e.target as HTMLElement).dataset.f === "b") { renderBuilds(); calc(); } });
 $("builds").addEventListener("click", e => {
   const r = (e.target as HTMLElement).dataset.remove; if (r == null) return;
-  builds.splice(+r, 1); renderBuilds(); calc();
+  v.builds.splice(+r, 1); renderBuilds(); calc();
 });
 
-restore();
-renderBuilds();
-setMode(mode);
+$("addTroop").addEventListener("click", () => {
+  const last = v.troops[v.troops.length - 1];
+  v.troops.push({ unit: last ? last.unit : 0, ratio: "1", count: last ? last.count : "100" });
+  renderTroops(); calc();
+  const sel = $("tunit" + (v.troops.length - 1)); if (sel) sel.focus();
+});
+$("troops").addEventListener("input", e => {
+  const t = e.target as HTMLInputElement;
+  const row = t.closest<HTMLElement>(".brow"); if (!row) return;
+  const r = v.troops[+row.dataset.i!], f = t.dataset.f as keyof TroopRow;
+  if (f === "unit") { r.unit = +t.value; statSel.value = t.value; showStats(); renderTrainFields(); }
+  else if (f === "ratio" || f === "count") r[f] = t.value;
+  calc();
+});
+$("troops").addEventListener("click", e => {
+  const r = (e.target as HTMLElement).dataset.remove; if (r == null) return;
+  v.troops.splice(+r, 1); renderTroops(); calc();
+});
+$("trainFields").addEventListener("input", e => {
+  const t = e.target as HTMLInputElement;
+  trainOf(t.dataset.b as TrainingBuilding)[t.dataset.f as "lvl" | "bonus"] = t.value;
+  calc();
+});
+
+applyVillage();

@@ -1,6 +1,6 @@
 # Travian Village Planner
 
-Static web tool for Travian Legends players. It plans building upgrades and troop training, computes NPC merchant redistribution, and works out what to send from another village.
+Static web tool for Travian Legends players. It keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution, and works out what to send from another village.
 
 ## Structure
 Vite + TypeScript, no runtime dependencies. Output is a static site in `dist/`.
@@ -9,17 +9,19 @@ Vite + TypeScript, no runtime dependencies. Output is a static site in `dist/`.
 index.html              markup only; loads src/style.css and src/main.ts
 src/
   main.ts               DOM wiring: rendering, events, reading inputs
-  storage.ts            localStorage save/load
+  storage.ts            localStorage: saved villages, unit stat edits, migration of old saves
   style.css             all styles (light/dark via CSS variables on :root)
-  types.ts              Res4, Unit, Building, Merchant
+  types.ts              Res4, Unit, Building, Merchant, Celebration
   data/
     units.json          units per tribe
     buildings.json      buildings: level-1 cost, growth factor k, max level
     merchants.json      merchant capacity and speed per tribe
-    index.ts            typed exports UNITS, BUILDINGS, MERCH
+    celebrations.json   small and great celebration costs
+    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS
   calc/                 pure functions, no DOM access
     buildings.ts        round5, levelCost, rangeCost, buildingTotals
-    troops.ts           trainingTime, maxTroops, troopsForTime
+    troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, troopMixForTime, mixDuration
+    celebrations.ts     celebrationCost
     npc.ts              storageCaps, planNeeds, npcTargets
     merchants.ts        merchantsNeeded, travelSeconds
     format.ts           fmt, fmtTime, toNum
@@ -38,8 +40,10 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 
 ## Rules
 - Keep calculation logic in `src/calc/` as pure functions with tests; `main.ts` only reads inputs and renders.
-- Do not reorder entries in `units.json` or `buildings.json`: saved state stores unit and building indices. Append new entries at the end of a list.
-- The localStorage key is `village-planner`; `npc-planner` is read once as a legacy fallback. Keep both working.
+- Do not reorder entries in `units.json`, `buildings.json` or `celebrations.json`: saved state stores indices. Append new entries at the end of a list.
+- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
+- A single troop row with ratio 1 and no celebrations must give exactly the results of the old single-unit version; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
+- `.grid2`, `.grid3`, `.grid4` and `.inline` set `display`, which overrides the `hidden` attribute. To hide such a block, wrap it in a plain div and hide that.
 - `vite.config.ts` uses `base: "./"` so the build works under any GitHub Pages path, and `cssMinify: false` so the stylesheet ships as written.
 - Keep it dependency-free at runtime unless a feature clearly needs a library.
 - Mobile-first: the main user plays on a phone. Support light and dark mode via the CSS variables.
@@ -47,11 +51,17 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 ## Formulas in use
 - Building level cost: `round5(base * k^(level-1))` per resource. `k` is 1.67 for resource fields, 1.80 for factory buildings, and about 1.28 for most others.
 - Training time per unit: `base * 0.9^(buildingLevel-1) / serverSpeed * (1 - bonus%)`.
-- Max troops: `floor((totalResources - buildingCost) / unitCostSum)`, also limited by warehouse/granary capacity per resource (a cap is ignored for a resource whose building cost alone exceeds it).
+- Max troops: `floor((totalResources - otherCosts) / unitCostSum)`, where other costs are buildings plus celebrations, also limited by warehouse/granary capacity per resource (a cap is ignored for a resource whose other costs alone exceed it).
+- Troop mix: rows have a ratio weight. Max mode finds the largest number of batches `x` (one batch = `weight` units of each row) under the same limits, then each row gets `floor(weight * x)`. Time mode: each training building (barracks, stable, workshop, residence) is its own parallel queue; rows sharing one split its time by weight. Level and time bonus are set per training building.
+- Celebrations: fixed cost per celebration (small 6,400 / 6,650 / 5,940 / 1,340, great 29,700 / 33,250 / 32,000 / 6,700).
 - NPC leftover goes to the preferred resource first, then crop, wood, clay, iron, within capacity.
 - Merchant travel time: `distance / (merchantSpeed * serverSpeed)`.
 
 ## Known gaps / unverified data
+- Celebration costs are standard values from memory, not yet checked against the game.
+- Smithy upgrades are not implemented: we still need a reliable source for their costs.
+- Importing resources from the game's village overview is planned as a paste box (the user copies the page text). Travian's rules ban tools that automate or read the game directly, so do not build anything that does.
+- Known pre-existing bug: “Put NPC leftover into” is meant to hide when no NPC trade is needed, but `.inline` overrides `hidden`, so it always shows.
 - Spartan unit costs are unverified; Spartan base training times are blank (0).
 - Other tribes' base training times are from memory; verify against the game.
 - Building construction time is not implemented (formula depends on main building level and per-building constants).

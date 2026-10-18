@@ -45,6 +45,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-v
 .good { color: var(--gain); }
 button { font: inherit; font-size: 0.95rem; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
 button.primary { border-color: var(--ink); font-weight: 700; }
+button:disabled { opacity: 0.45; cursor: default; }
 
 /* Mode switch */
 .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -94,3 +95,11 @@ tfoot td:first-child { color: var(--ink); }
 details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
 details summary { cursor: pointer; font-family: "Alegreya", Georgia, serif; font-weight: 700; font-size: 1.1rem; }
 details[open] summary { margin-bottom: 10px; }
+
+/* Village switcher */
+.village-bar { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: end; margin-bottom: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+@media (max-width: 460px) { .village-bar { grid-template-columns: 1fr 1fr 1fr; } .village-bar > div { grid-column: 1 / -1; } }
+
+/* Troop rows */
+.trow-out { grid-column: span 2; align-self: end; padding-bottom: 9px; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+.trow-out b { font-weight: 700; }

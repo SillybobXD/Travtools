@@ -28,3 +28,10 @@ export interface Merchant {
   /** Fields per hour at 1× speed. */
   speed: number;
 }
+
+export interface Celebration {
+  name: string;
+  cost: Res4;
+  /** Minimum town hall level. */
+  townHall: number;
+}

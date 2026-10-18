@@ -16,6 +16,12 @@
 
   <section>
     <h2>Village</h2>
+    <div class="village-bar">
+      <div><label for="village">Saved village</label><select id="village"></select></div>
+      <button type="button" id="newVillage">New</button>
+      <button type="button" id="renameVillage">Rename</button>
+      <button type="button" id="deleteVillage">Delete</button>
+    </div>
     <div class="grid2">
       <div><label for="tribe">Tribe</label><select id="tribe"></select></div>
       <div><label for="speed">Server speed</label><select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option></select></div>
@@ -40,6 +46,15 @@
   </section>
 
   <section>
+    <h2>Celebrations</h2>
+    <div class="grid2">
+      <div><label for="celeb0">Small celebrations</label><input id="celeb0" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="celeb1">Great celebrations</label><input id="celeb1" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <p class="hint">Small celebrations need town hall level 1, great ones level 10. Costs are the standard values and haven’t been checked against the game yet.</p>
+  </section>
+
+  <section>
     <h2>Troops</h2>
     <div class="seg" role="group" aria-label="How to plan troops">
       <button type="button" data-mode="none">None</button>
@@ -48,16 +63,14 @@
       <button type="button" data-mode="time">Fill a time</button>
     </div>
     <div id="troopFields">
-      <div class="grid2 gap">
-        <div><label for="unit">Unit</label><select id="unit"></select></div>
-        <div><label for="lvl" id="lvlLabel">Barracks level</label><input id="lvl" inputmode="numeric" autocomplete="off"></div>
-      </div>
-      <div class="grid3 gap">
-        <div id="countWrap"><label for="count">Number of units</label><input id="count" inputmode="numeric" autocomplete="off"></div>
-        <div id="hoursWrap"><label for="hours">Hours</label><input id="hours" inputmode="numeric" autocomplete="off"></div>
-        <div id="minsWrap"><label for="mins">Minutes</label><input id="mins" inputmode="numeric" autocomplete="off"></div>
-        <div><label for="bonus">Time bonus %</label><input id="bonus" inputmode="numeric" autocomplete="off"></div>
-      </div>
+      <div id="troops" class="gap"></div>
+      <button type="button" id="addTroop" class="gap">Add troop type</button>
+      <p class="hint" id="ratioHint">With several troop types, “Ratio” sets the mix, for example 2 and 1 for twice as many of the first.</p>
+      <div id="timeWrap"><div class="grid2 gap">
+        <div><label for="hours">Hours</label><input id="hours" inputmode="numeric" autocomplete="off"></div>
+        <div><label for="mins">Minutes</label><input id="mins" inputmode="numeric" autocomplete="off"></div>
+      </div></div>
+      <div id="trainFields"></div>
       <div class="troop-out" id="troopOut"></div>
     </div>
   </section>
@@ -89,8 +102,9 @@
 
   <details>
     <summary>Unit stats</summary>
-    <p class="hint" style="margin-top:0">Pre-filled with standard Travian Legends values at 1× speed and building level 1. If your server shows different numbers, edit them here.</p>
-    <div class="grid4">
+    <p class="hint" style="margin-top:0">Pre-filled with standard Travian Legends values at 1× speed and building level 1. If your server shows different numbers, edit them here. Your edits are kept for all villages.</p>
+    <div class="gap"><label for="statUnit">Unit</label><select id="statUnit"></select></div>
+    <div class="grid4 gap">
       <div class="res" style="--c: var(--wood)"><label for="cost0">Wood</label><input id="cost0" inputmode="numeric"></div>
       <div class="res" style="--c: var(--clay)"><label for="cost1">Clay</label><input id="cost1" inputmode="numeric"></div>
       <div class="res" style="--c: var(--iron)"><label for="cost2">Iron</label><input id="cost2" inputmode="numeric"></div>

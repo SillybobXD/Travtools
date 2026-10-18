@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, MERCH, UNITS } from ".";
+import { BUILDINGS, CELEBRATIONS, MERCH, UNITS } from ".";
 
 const isRes4 = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every(v => Number.isInteger(v) && v >= 0);
 
@@ -17,6 +17,11 @@ describe("data files", () => {
       expect(u.time).toBeGreaterThanOrEqual(0);
       expect(["B", "S", "W", "R"]).toContain(u.building);
     }
+  });
+
+  it("celebrations are well-formed", () => {
+    expect(CELEBRATIONS.map(c => c.name)).toEqual(["Small celebration", "Great celebration"]);
+    for (const c of CELEBRATIONS) expect(isRes4(c.cost), c.name).toBe(true);
   });
 
   it("buildings are well-formed", () => {
