@@ -1,0 +1,8 @@
+{
+  "Teutons": {"capacity":1000,"speed":12},
+  "Romans": {"capacity":500,"speed":16},
+  "Gauls": {"capacity":750,"speed":24},
+  "Egyptians": {"capacity":750,"speed":16},
+  "Huns": {"capacity":500,"speed":20},
+  "Spartans": {"capacity":500,"speed":14}
+}
