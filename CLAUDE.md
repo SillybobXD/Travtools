@@ -68,7 +68,6 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Celebration costs are standard values from memory, not yet checked against the game.
 - Smithy upgrades are not implemented: we still need a reliable source for their costs.
 - The paste import is tested against an English phone copy only. Other languages should work (numbers and the sum row are found without relying on words), but the “Population” fallback for finding the active village is English-only.
-- Only the village you're in gets warehouse and granary capacity from an import; the overview's Resources tab doesn't list storage. Pasting while in each village fills in each one.
 - The map size (401) is fixed; servers with a different map size would need it as a setting.
 - Spartan unit costs are unverified; Spartan base training times are blank (0).
 - Other tribes' base training times are from memory; verify against the game.
@@ -76,11 +75,11 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
 
 ## Import from the game
-The user copies the whole Village overview page (Resources tab) and pastes it into “Import from the game”. `parseOverview`:
+The user copies the whole Village overview page, Resources tab and/or Capacity tab, and pastes it into “Import from the game” (one tab per paste). `parseOverview`:
 - strips the direction marks (U+202A–202E, U+2066–2069) the game puts around every number;
 - finds the top bar as a run of number-only lines: warehouse, wood, clay, iron, granary, crop (gold/silver before it are skipped);
-- reads table rows as `name, wood, clay, iron, crop[, merchants a/b]` and drops the last row if it is the sum of the others;
-- picks the active village as the row closest to the top bar, else the line before “Population”;
+- reads Resources rows as `name, wood, clay, iron, crop[, merchants a/b]` and Capacity rows as `name, warehouse, granary`, and drops the last row of each if it is the sum of the others;
+- picks the active village as the Resources row closest to the top bar, or the only Capacity row with the top bar's warehouse and granary, else the line before “Population”;
 - reads coordinates `(x|y)` from the village list, on their own line under the name or after it.
 
-Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one. Coordinates are saved with each village. The active village also gets warehouse and granary, and the planner switches to it.
+Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one. Rows from both tabs are merged by name. Each village gets whatever the paste has: resources, storage, coordinates. The village you were in always gets the top bar (resources and storage, the freshest values), and the planner switches to it.

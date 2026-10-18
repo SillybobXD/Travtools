@@ -96,11 +96,77 @@ describe("parseOverview", () => {
   });
 
   it("finds nothing in unrelated text", () => {
-    expect(parseOverview("hello\nworld")).toEqual({ stock: null, villages: [], activeName: null, coords: {} });
+    expect(parseOverview("hello\nworld")).toEqual({ stock: null, villages: [], capacities: [], activeName: null, coords: {} });
   });
 
   it("falls back to the line before Population when the top bar doesn't match a row", () => {
     const t = parseOverview(SAMPLE.replace(n("5,596"), n("15,596")).replace(n("21,400"), n("80,000")));
     expect(t.activeName).toBe("Northgate");
+  });
+});
+
+/** The Capacity tab, shaped like a real phone copy, with names changed. */
+const CAPACITY = `Privacy settings
+${n("762")}
+${n("708")}
+${n("21,400")}
+${n("6,621")}
+${n("5,129")}
+${n("4,120")}
+${n("31,300")}
+${n("2,988")}
+${n("2,177")}
+Info box
+\u202d${n("1")}×\u202c
+Village overview
+Resources
+Warehouse
+Production
+Capacity
+
+Village    Warehouse    Granary
+Northgate    ${n("21,400")}    ${n("31,300")}
+Eastmoor    ${n("9,600")}    ${n("21,400")}
+South Hill    ${n("21,400")}    ${n("21,400")}
+Westwood    ${n("5,000")}    ${n("1,700")}
+Sum    ${n("57,400")}    ${n("75,800")}
+
+PlayerOne
+Northgate
+Population: ${n("679")}
+Loyalty: \u202d${n("100")}%\u202c
+
+Villages \u202d${n("4")}/${n("4")}\u202c
+Northgate
+\u202d(${n("12")}|${n("34")})\u202c`;
+
+describe("parseOverview on the Capacity tab", () => {
+  const r = parseOverview(CAPACITY);
+
+  it("reads warehouse and granary per village and drops the sum row", () => {
+    expect(r.capacities).toEqual([
+      { name: "Northgate", warehouse: 21400, granary: 31300 },
+      { name: "Eastmoor", warehouse: 9600, granary: 21400 },
+      { name: "South Hill", warehouse: 21400, granary: 21400 },
+      { name: "Westwood", warehouse: 5000, granary: 1700 },
+    ]);
+    expect(r.villages).toEqual([]);
+  });
+
+  it("still reads the top bar for the village you're in", () => {
+    expect(r.stock).toEqual({ res: [6621, 5129, 4120, 2988], warehouse: 21400, granary: 31300 });
+  });
+
+  it("finds the active village by its storage", () => {
+    expect(r.activeName).toBe("Northgate");
+  });
+
+  it("falls back to the line before Population when two villages have the same storage", () => {
+    const t = parseOverview(CAPACITY.replace(`Eastmoor    ${n("9,600")}    ${n("21,400")}`, `Eastmoor    ${n("21,400")}    ${n("31,300")}`));
+    expect(t.activeName).toBe("Northgate");
+  });
+
+  it("doesn't read capacity rows from the Resources tab", () => {
+    expect(parseOverview(SAMPLE).capacities).toEqual([]);
   });
 });

@@ -98,9 +98,9 @@ function applyVillage() {
 }
 
 /* ---- import from the game ---- */
-interface ImportRow { name: string; res: Res4; active: boolean }
+/** One village from a paste: resources (Resources tab or top bar) and/or storage (Capacity tab or top bar). */
+interface ImportRow { name: string; res?: Res4; wh?: number; gr?: number; active: boolean }
 let importRows: ImportRow[] = [];
-let importStock: OverviewImport["stock"] = null;
 let importCoords: OverviewImport["coords"] = {};
 
 const sameName = (a: string | undefined, b: string) => !!a && a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -108,29 +108,35 @@ const sameName = (a: string | undefined, b: string) => !!a && a.trim().toLowerCa
 function previewImport() {
   const text = $<HTMLTextAreaElement>("importText").value;
   const r = parseOverview(text);
-  importStock = r.stock;
   importCoords = r.coords;
-  importRows = r.villages.map(x => ({ ...x, active: x.name === r.activeName }));
+  const byName = new Map<string, ImportRow>();
+  const rowFor = (name: string) => byName.get(name) ?? byName.set(name, { name, active: name === r.activeName }).get(name)!;
+  r.villages.forEach(x => rowFor(x.name).res = x.res);
+  r.capacities.forEach(x => Object.assign(rowFor(x.name), { wh: x.warehouse, gr: x.granary }));
+  importRows = [...byName.values()];
   // Top bar only (e.g. copied from another page): it belongs to the village shown here.
-  if (!importRows.length && r.stock) importRows = [{ name: "", res: r.stock.res, active: true }];
+  if (!importRows.length && r.stock) importRows = [{ name: "", active: true }];
+  // The top bar is the freshest data for the village you were in.
+  const s = r.stock;
+  if (s) importRows.filter(x => x.active).forEach(x => Object.assign(x, { res: s.res, wh: s.warehouse, gr: s.granary }));
   $("importStatus").textContent = "";
   const box = $("importPreview");
   if (!text.trim()) { box.innerHTML = ""; return; }
-  if (!importRows.length) { box.innerHTML = `<p class="hint warn">Couldn't find resources in that text. Copy the whole Village overview page, Resources tab.</p>`; return; }
+  if (!importRows.length) { box.innerHTML = `<p class="hint warn">Couldn't find resources or storage in that text. Copy the whole Village overview page, Resources or Capacity tab.</p>`; return; }
   const saved = Object.entries(store.villages);
   const matchOf = (row: ImportRow) => row.name ? saved.find(([, s]) => sameName(s.gameName, row.name) || sameName(s.name, row.name))?.[0] : store.current;
   const matched = new Set(importRows.map(matchOf));
   // First import: the village you were in goes into the one shown here, if nothing else claims it.
   const fallback = !v.gameName && !matched.has(store.current) ? store.current : undefined;
   box.innerHTML = `<div class="gap">` + importRows.map((row, i) => {
-    const res = row.active && importStock ? importStock.res : row.res;
     const match = matchOf(row) ?? (row.active ? fallback : undefined);
     const opts = [`<option value="new"${match ? "" : " selected"}>New village</option>`,
       ...saved.map(([id, s]) => `<option value="${id}"${id === match ? " selected" : ""}>${esc(s.name)}</option>`),
       `<option value="skip">Skip</option>`].join("");
     return `<div class="imp-row">
       <div><strong>${row.name ? esc(row.name) : "Village you were in"}</strong>${row.active && row.name ? ` <span class="hint">(you were here)</span>` : ""}
-        <div class="cost-line">${RES.map(k => `<span style="--c:${COLORS[k]}"><b>${NAMES[k]}</b> ${fmt(res[k])}</span>`).join("")}</div></div>
+        ${row.res ? `<div class="cost-line">${RES.map(k => `<span style="--c:${COLORS[k]}"><b>${NAMES[k]}</b> ${fmt(row.res![k])}</span>`).join("")}</div>` : ""}
+        ${row.wh != null ? `<div class="cost-line"><span><b>Warehouse</b> ${fmt(row.wh)}</span><span><b>Granary</b> ${fmt(row.gr!)}</span></div>` : ""}</div>
       <select data-i="${i}" aria-label="Save ${row.name ? esc(row.name) : "this village"} into">${opts}</select>
     </div>`;
   }).join("") + `</div><button type="button" class="primary gap" id="importApply">Update villages</button>`;
@@ -138,7 +144,7 @@ function previewImport() {
 
 function applyImport() {
   save();
-  let updated = 0, added = 0, activeId: string | null = null;
+  let updated = 0, added = 0, storage = 0, activeId: string | null = null;
   document.querySelectorAll<HTMLSelectElement>("#importPreview select").forEach(sel => {
     const row = importRows[+sel.dataset.i!];
     if (sel.value === "skip") return;
@@ -152,9 +158,9 @@ function applyImport() {
     if (row.name) target.gameName = row.name;
     const c = importCoords[row.name];
     if (c) { target.fields.x = String(c.x); target.fields.y = String(c.y); }
-    const stock = row.active ? importStock : null;
-    (stock ? stock.res : row.res).forEach((x, k) => target.fields["have" + k] = String(x));
-    if (stock) { target.fields.wh = String(stock.warehouse); target.fields.gr = String(stock.granary); activeId = id; }
+    row.res?.forEach((x, k) => target.fields["have" + k] = String(x));
+    if (row.wh != null) { target.fields.wh = String(row.wh); target.fields.gr = String(row.gr); storage++; }
+    if (row.active) activeId = id;
   });
   if (activeId) store.current = activeId;
   v = store.villages[store.current];
@@ -162,7 +168,9 @@ function applyImport() {
   $<HTMLTextAreaElement>("importText").value = "";
   $("importPreview").innerHTML = "";
   const parts = [updated && `updated ${updated} village${updated === 1 ? "" : "s"}`, added && `added ${added}`].filter(Boolean);
-  $("importStatus").textContent = parts.length ? `Done: ${parts.join(", ")}.` + (activeId ? ` Showing ${v.name}, with its storage.` : "") : "Nothing imported.";
+  $("importStatus").textContent = parts.length
+    ? `Done: ${parts.join(", ")}.` + (storage ? ` Storage set for ${storage}.` : "") + (activeId ? ` Showing ${v.name}.` : "")
+    : "Nothing imported.";
 }
 
 /* ---- unit stats ---- */
