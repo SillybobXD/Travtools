@@ -18,6 +18,8 @@ src/
     merchants.json      merchant capacity and speed per tribe
     celebrations.json   small and great celebration costs
     index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS
+  parse/
+    overview.ts         parseOverview: reads a pasted copy of the game's village overview
   calc/                 pure functions, no DOM access
     buildings.ts        round5, levelCost, rangeCost, buildingTotals
     troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, troopMixForTime, mixDuration
@@ -43,7 +45,9 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Do not reorder entries in `units.json`, `buildings.json` or `celebrations.json`: saved state stores indices. Append new entries at the end of a list.
 - Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
 - A single troop row with ratio 1 and no celebrations must give exactly the results of the old single-unit version; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
-- `.grid2`, `.grid3`, `.grid4` and `.inline` set `display`, which overrides the `hidden` attribute. To hide such a block, wrap it in a plain div and hide that.
+- `[hidden] { display: none !important; }` in `style.css` makes the `hidden` attribute win over classes that set `display`. Keep it.
+- Form fields set `box-sizing: border-box` themselves, because Chrome doesn't pass it through to elements inside `<details>`.
+- The paste import must stay something the user triggers by copying text. Travian's rules ban tools that automate or read the game directly.
 - `vite.config.ts` uses `base: "./"` so the build works under any GitHub Pages path, and `cssMinify: false` so the stylesheet ships as written.
 - Keep it dependency-free at runtime unless a feature clearly needs a library.
 - Mobile-first: the main user plays on a phone. Support light and dark mode via the CSS variables.
@@ -60,9 +64,18 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 ## Known gaps / unverified data
 - Celebration costs are standard values from memory, not yet checked against the game.
 - Smithy upgrades are not implemented: we still need a reliable source for their costs.
-- Importing resources from the game's village overview is planned as a paste box (the user copies the page text). Travian's rules ban tools that automate or read the game directly, so do not build anything that does.
-- Known pre-existing bug: “Put NPC leftover into” is meant to hide when no NPC trade is needed, but `.inline` overrides `hidden`, so it always shows.
+- The paste import is tested against an English phone copy only. Other languages should work (numbers and the sum row are found without relying on words), but the “Population” fallback for finding the active village is English-only.
+- Only the village you're in gets warehouse and granary capacity from an import; the overview's Resources tab doesn't list storage. Pasting while in each village fills in each one.
 - Spartan unit costs are unverified; Spartan base training times are blank (0).
 - Other tribes' base training times are from memory; verify against the game.
 - Building construction time is not implemented (formula depends on main building level and per-building constants).
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
+
+## Import from the game
+The user copies the whole Village overview page (Resources tab) and pastes it into “Import from the game”. `parseOverview`:
+- strips the direction marks (U+202A–202E, U+2066–2069) the game puts around every number;
+- finds the top bar as a run of number-only lines: warehouse, wood, clay, iron, granary, crop (gold/silver before it are skipped);
+- reads table rows as `name, wood, clay, iron, crop[, merchants a/b]` and drops the last row if it is the sum of the others;
+- picks the active village as the row closest to the top bar, else the line before “Population”.
+
+Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one. The active village also gets warehouse and granary, and the planner switches to it.

@@ -15,6 +15,8 @@ export interface TroopRow {
 /** Everything the planner shows for one village. Inputs are kept as typed. */
 export interface VillageState {
   name: string;
+  /** The village's name in the game, remembered from the last import. */
+  gameName?: string;
   tribe: string;
   speed: string;
   pref: string;

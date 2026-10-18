@@ -23,6 +23,7 @@
 }
 html { scroll-padding-top: env(safe-area-inset-top, 0px); }
 *, *::before, *::after { box-sizing: inherit; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Alegreya Sans", "Gill Sans", "Segoe UI", system-ui, sans-serif; font-size: 17px; line-height: 1.45; }
 main { max-width: 680px; margin: 0 auto; padding: 20px 14px 48px; }
 h1 { font-family: "Alegreya", Georgia, "Times New Roman", serif; font-weight: 800; font-size: 1.9rem; line-height: 1.1; margin: 8px 0 4px; }
@@ -36,8 +37,8 @@ section { background: var(--surface); border: 1px solid var(--line); border-radi
 @media (max-width: 460px) { .grid4 { grid-template-columns: 1fr 1fr; } .grid3 { grid-template-columns: 1fr 1fr; } }
 .gap { margin-top: 10px; }
 label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 3px; }
-input, select { width: 100%; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
-input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+input, select, textarea { box-sizing: border-box; width: 100%; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .res input { border-left: 5px solid var(--c); }
 .res label { color: var(--c); font-weight: 700; }
 .hint { font-size: 0.9rem; color: var(--muted); margin: 8px 0 0; }
@@ -103,3 +104,10 @@ details[open] summary { margin-bottom: 10px; }
 /* Troop rows */
 .trow-out { grid-column: span 2; align-self: end; padding-bottom: 9px; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 .trow-out b { font-weight: 700; }
+
+/* Import */
+textarea { display: block; resize: vertical; font-size: 0.9rem; }
+.imp-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 10rem); gap: 6px 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.imp-row:first-child { border-top: 0; }
+.imp-row .cost-line { margin-top: 2px; font-size: 0.85rem; }
+.imp-row .cost-line b { font-weight: 700; }

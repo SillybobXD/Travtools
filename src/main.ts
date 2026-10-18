@@ -6,6 +6,7 @@ import { celebrationCost } from "./calc/celebrations";
 import { maxTroopMix, mixDuration, trainingTime, troopMixForTime, type TimedRow } from "./calc/troops";
 import { npcTargets, planNeeds, storageCaps } from "./calc/npc";
 import { merchantsNeeded, travelSeconds } from "./calc/merchants";
+import { parseOverview, type OverviewImport } from "./parse/overview";
 import { loadStore, newId, newVillage, saveStore, type Store, type TroopRow, type VillageState } from "./storage";
 
 const TRAIN_NAME: Record<TrainingBuilding, string> = { B: "Barracks", S: "Stable", W: "Workshop", R: "Residence or palace" };
@@ -74,6 +75,70 @@ function applyVillage() {
   fillStatUnits(v.troops[0].unit);
   renderBuilds();
   setMode(v.mode || "max");
+}
+
+/* ---- import from the game ---- */
+interface ImportRow { name: string; res: Res4; active: boolean }
+let importRows: ImportRow[] = [];
+let importStock: OverviewImport["stock"] = null;
+
+const sameName = (a: string | undefined, b: string) => !!a && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+function previewImport() {
+  const text = $<HTMLTextAreaElement>("importText").value;
+  const r = parseOverview(text);
+  importStock = r.stock;
+  importRows = r.villages.map(x => ({ ...x, active: x.name === r.activeName }));
+  // Top bar only (e.g. copied from another page): it belongs to the village shown here.
+  if (!importRows.length && r.stock) importRows = [{ name: "", res: r.stock.res, active: true }];
+  $("importStatus").textContent = "";
+  const box = $("importPreview");
+  if (!text.trim()) { box.innerHTML = ""; return; }
+  if (!importRows.length) { box.innerHTML = `<p class="hint warn">Couldn't find resources in that text. Copy the whole Village overview page, Resources tab.</p>`; return; }
+  const saved = Object.entries(store.villages);
+  const matchOf = (row: ImportRow) => row.name ? saved.find(([, s]) => sameName(s.gameName, row.name) || sameName(s.name, row.name))?.[0] : store.current;
+  const matched = new Set(importRows.map(matchOf));
+  // First import: the village you were in goes into the one shown here, if nothing else claims it.
+  const fallback = !v.gameName && !matched.has(store.current) ? store.current : undefined;
+  box.innerHTML = `<div class="gap">` + importRows.map((row, i) => {
+    const res = row.active && importStock ? importStock.res : row.res;
+    const match = matchOf(row) ?? (row.active ? fallback : undefined);
+    const opts = [`<option value="new"${match ? "" : " selected"}>New village</option>`,
+      ...saved.map(([id, s]) => `<option value="${id}"${id === match ? " selected" : ""}>${esc(s.name)}</option>`),
+      `<option value="skip">Skip</option>`].join("");
+    return `<div class="imp-row">
+      <div><strong>${row.name ? esc(row.name) : "Village you were in"}</strong>${row.active && row.name ? ` <span class="hint">(you were here)</span>` : ""}
+        <div class="cost-line">${RES.map(k => `<span style="--c:${COLORS[k]}"><b>${NAMES[k]}</b> ${fmt(res[k])}</span>`).join("")}</div></div>
+      <select data-i="${i}" aria-label="Save ${row.name ? esc(row.name) : "this village"} into">${opts}</select>
+    </div>`;
+  }).join("") + `</div><button type="button" class="primary gap" id="importApply">Update villages</button>`;
+}
+
+function applyImport() {
+  save();
+  let updated = 0, added = 0, activeId: string | null = null;
+  document.querySelectorAll<HTMLSelectElement>("#importPreview select").forEach(sel => {
+    const row = importRows[+sel.dataset.i!];
+    if (sel.value === "skip") return;
+    let id = sel.value;
+    if (id === "new") {
+      id = newId();
+      store.villages[id] = newVillage(row.name || `Village ${Object.keys(store.villages).length + 1}`, v.tribe, v.speed);
+      added++;
+    } else updated++;
+    const target = store.villages[id];
+    if (row.name) target.gameName = row.name;
+    const stock = row.active ? importStock : null;
+    (stock ? stock.res : row.res).forEach((x, k) => target.fields["have" + k] = String(x));
+    if (stock) { target.fields.wh = String(stock.warehouse); target.fields.gr = String(stock.granary); activeId = id; }
+  });
+  if (activeId) store.current = activeId;
+  v = store.villages[store.current];
+  applyVillage();
+  $<HTMLTextAreaElement>("importText").value = "";
+  $("importPreview").innerHTML = "";
+  const parts = [updated && `updated ${updated} village${updated === 1 ? "" : "s"}`, added && `added ${added}`].filter(Boolean);
+  $("importStatus").textContent = parts.length ? `Done: ${parts.join(", ")}.` + (activeId ? ` Showing ${v.name}, with its storage.` : "") : "Nothing imported.";
 }
 
 /* ---- unit stats ---- */
@@ -311,6 +376,8 @@ $("renameVillage").addEventListener("click", () => {
   if (name === null || !name.trim()) return;
   v.name = name.trim(); fillVillages(); save();
 });
+$("importText").addEventListener("input", previewImport);
+$("importPreview").addEventListener("click", e => { if ((e.target as HTMLElement).id === "importApply") applyImport(); });
 $("deleteVillage").addEventListener("click", () => {
   if (Object.keys(store.villages).length < 2 || !confirm(`Delete “${v.name}”? Its saved plan will be lost.`)) return;
   delete store.villages[store.current];
