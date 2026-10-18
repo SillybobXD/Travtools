@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Village planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #e6e9e1; --surface: #f4f5f0; --ink: #232820; --muted: #5d6458; --line: #c9cec0; --field: #ffffff;
+  --wood: #8a5a2b; --clay: #b0482e; --iron: #56636f; --crop: #a88412;
+  --gain: #2f7a3e; --loss: #a8392a; --focus: #2f6fa8;
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1b201b; --surface: #242a24; --ink: #e7eadf; --muted: #a2a998; --line: #3a423a; --field: #161a16;
+    --wood: #c88a4e; --clay: #de7559; --iron: #9fb0bf; --crop: #e0bd45;
+    --gain: #74c487; --loss: #ef8a78; --focus: #79b2e6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1b201b; --surface: #242a24; --ink: #e7eadf; --muted: #a2a998; --line: #3a423a; --field: #161a16;
+  --wood: #c88a4e; --clay: #de7559; --iron: #9fb0bf; --crop: #e0bd45;
+  --gain: #74c487; --loss: #ef8a78; --focus: #79b2e6;
+  color-scheme: dark;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+*, *::before, *::after { box-sizing: inherit; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Alegreya Sans", "Gill Sans", "Segoe UI", system-ui, sans-serif; font-size: 17px; line-height: 1.45; }
+main { max-width: 680px; margin: 0 auto; padding: 20px 14px 48px; }
+h1 { font-family: "Alegreya", Georgia, "Times New Roman", serif; font-weight: 800; font-size: 1.9rem; line-height: 1.1; margin: 8px 0 4px; }
+.lede { color: var(--muted); margin: 0 0 20px; }
+h2 { font-family: "Alegreya", Georgia, serif; font-weight: 700; font-size: 1.2rem; margin: 0 0 10px; }
+h3 { font-family: "Alegreya", Georgia, serif; font-weight: 700; font-size: 1.05rem; margin: 18px 0 8px; }
+section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 460px) { .grid4 { grid-template-columns: 1fr 1fr; } .grid3 { grid-template-columns: 1fr 1fr; } }
+.gap { margin-top: 10px; }
+label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 3px; }
+input, select { width: 100%; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.res input { border-left: 5px solid var(--c); }
+.res label { color: var(--c); font-weight: 700; }
+.hint { font-size: 0.9rem; color: var(--muted); margin: 8px 0 0; }
+.warn { color: var(--loss); }
+.good { color: var(--gain); }
+button { font: inherit; font-size: 0.95rem; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button.primary { border-color: var(--ink); font-weight: 700; }
+
+/* Mode switch */
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { flex: 1; border: 0; border-radius: 0; padding: 8px 4px; font-size: 0.9rem; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 700; }
+
+/* Building rows */
+.brow { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.brow:first-of-type { border-top: 0; padding-top: 0; }
+.brow-top { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.brow-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.cost-line { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+.cost-line b { font-weight: 700; color: var(--c); }
+.remove { padding: 8px 10px; }
+
+/* Troop summary */
+.troop-out { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 12px; align-items: baseline; }
+.big { font-family: "Alegreya", Georgia, serif; font-weight: 800; font-size: 2.6rem; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
+.stat span { display: block; font-size: 0.85rem; color: var(--muted); }
+.stat strong { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+
+/* Plan */
+.plan-card { border-width: 2px; border-color: var(--ink); }
+.verdict { font-family: "Alegreya", Georgia, serif; font-weight: 700; font-size: 1.35rem; line-height: 1.25; margin: 0 0 12px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: right; font-weight: 500; font-size: 0.85rem; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child { text-align: left; }
+td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td:first-child { text-align: left; font-weight: 700; color: var(--c); }
+tbody tr:last-child td { border-bottom: 0; }
+tfoot td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 700; color: var(--ink); }
+tfoot td:first-child { color: var(--ink); }
+.up { color: var(--gain); font-weight: 700; }
+.down { color: var(--loss); font-weight: 700; }
+.zero { color: var(--muted); }
+.strong { font-weight: 700; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--c); }
+.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.inline label { margin: 0; }
+.inline select { width: auto; }
+.send-box { margin-top: 6px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.send-box p { margin: 0 0 6px; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+details summary { cursor: pointer; font-family: "Alegreya", Georgia, serif; font-weight: 700; font-size: 1.1rem; }
+details[open] summary { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Village planner</h1>
+  <p class="lede">Plan building upgrades and troop training together, then see whether to trade with the NPC merchant or send resources from another village.</p>
+
+  <section>
+    <h2>Village</h2>
+    <div class="grid2">
+      <div><label for="tribe">Tribe</label><select id="tribe"></select></div>
+      <div><label for="speed">Server speed</label><select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option></select></div>
+    </div>
+    <div class="grid4 gap">
+      <div class="res" style="--c: var(--wood)"><label for="have0">Wood</label><input id="have0" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--clay)"><label for="have1">Clay</label><input id="have1" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--iron)"><label for="have2">Iron</label><input id="have2" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--crop)"><label for="have3">Crop</label><input id="have3" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <div class="grid2 gap">
+      <div><label for="wh">Warehouse capacity</label><input id="wh" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="gr">Granary capacity</label><input id="gr" inputmode="numeric" autocomplete="off"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Building upgrades</h2>
+    <div id="builds"></div>
+    <button type="button" id="addBuild" class="gap">Add building</button>
+    <p class="hint">Use “How many” for several buildings of the same kind, for example 6 croplands going from level 5 to 7.</p>
+  </section>
+
+  <section>
+    <h2>Troops</h2>
+    <div class="seg" role="group" aria-label="How to plan troops">
+      <button type="button" data-mode="none">None</button>
+      <button type="button" data-mode="max">As many as possible</button>
+      <button type="button" data-mode="count">Set number</button>
+      <button type="button" data-mode="time">Fill a time</button>
+    </div>
+    <div id="troopFields">
+      <div class="grid2 gap">
+        <div><label for="unit">Unit</label><select id="unit"></select></div>
+        <div><label for="lvl" id="lvlLabel">Barracks level</label><input id="lvl" inputmode="numeric" autocomplete="off"></div>
+      </div>
+      <div class="grid3 gap">
+        <div id="countWrap"><label for="count">Number of units</label><input id="count" inputmode="numeric" autocomplete="off"></div>
+        <div id="hoursWrap"><label for="hours">Hours</label><input id="hours" inputmode="numeric" autocomplete="off"></div>
+        <div id="minsWrap"><label for="mins">Minutes</label><input id="mins" inputmode="numeric" autocomplete="off"></div>
+        <div><label for="bonus">Time bonus %</label><input id="bonus" inputmode="numeric" autocomplete="off"></div>
+      </div>
+      <div class="troop-out" id="troopOut"></div>
+    </div>
+  </section>
+
+  <section class="plan-card" aria-live="polite">
+    <h2>Plan</h2>
+    <p class="verdict" id="verdict"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Resource</th><th>Have</th><th>Needed</th><th id="lastHead">Set NPC to</th></tr></thead>
+        <tbody id="planBody"></tbody>
+        <tfoot id="planFoot"></tfoot>
+      </table>
+    </div>
+    <div class="inline" id="prefWrap">
+      <label for="pref">Put NPC leftover into</label>
+      <select id="pref"><option value="3">Crop</option><option value="0">Wood</option><option value="1">Clay</option><option value="2">Iron</option></select>
+    </div>
+    <p class="hint" id="planNote"></p>
+
+    <h3>Sending from another village</h3>
+    <div class="grid3">
+      <div><label for="merchCap">Each merchant carries</label><input id="merchCap" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="merchSpeed">Merchant speed (fields/h)</label><input id="merchSpeed" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="dist">Distance (fields)</label><input id="dist" inputmode="decimal" autocomplete="off"></div>
+    </div>
+    <div class="send-box" id="sendBox"></div>
+  </section>
+
+  <details>
+    <summary>Unit stats</summary>
+    <p class="hint" style="margin-top:0">Pre-filled with standard Travian Legends values at 1× speed and building level 1. If your server shows different numbers, edit them here.</p>
+    <div class="grid4">
+      <div class="res" style="--c: var(--wood)"><label for="cost0">Wood</label><input id="cost0" inputmode="numeric"></div>
+      <div class="res" style="--c: var(--clay)"><label for="cost1">Clay</label><input id="cost1" inputmode="numeric"></div>
+      <div class="res" style="--c: var(--iron)"><label for="cost2">Iron</label><input id="cost2" inputmode="numeric"></div>
+      <div class="res" style="--c: var(--crop)"><label for="cost3">Crop</label><input id="cost3" inputmode="numeric"></div>
+    </div>
+    <div class="grid2 gap">
+      <div><label for="upkeep">Crop upkeep per unit</label><input id="upkeep" inputmode="numeric"></div>
+      <div><label for="baseTime">Base training time (seconds)</label><input id="baseTime" inputmode="numeric"></div>
+    </div>
+    <p class="hint" id="unitWarn"></p>
+    <button type="button" id="resetUnit" class="gap">Reset unit stats</button>
+  </details>
+</main>
+
+<script>
+/* name, wood, clay, iron, crop, upkeep, base seconds (1x, building lvl 1), building */
+const UNITS = {
+  Teutons: [
+    ["Clubswinger",95,75,40,40,1,720,"B"],["Spearman",145,70,85,40,1,1120,"B"],["Axeman",130,120,170,70,1,1200,"B"],
+    ["Scout",160,100,50,50,1,1120,"S"],["Paladin",370,270,290,75,2,2400,"S"],["Teutonic Knight",450,515,480,80,3,2960,"S"],
+    ["Ram",1000,300,350,70,3,4200,"W"],["Catapult",900,1200,600,60,6,9000,"W"],
+    ["Chief",35500,26600,25000,27200,4,70500,"R"],["Settler",5800,5300,7200,5500,1,31000,"R"]
+  ],
+  Romans: [
+    ["Legionnaire",120,100,150,30,1,1600,"B"],["Praetorian",100,130,160,70,1,1760,"B"],["Imperian",150,160,210,80,1,1920,"B"],
+    ["Equites Legati",140,160,20,40,2,1360,"S"],["Equites Imperatoris",550,440,320,100,3,2640,"S"],["Equites Caesaris",550,640,800,180,4,3520,"S"],
+    ["Battering Ram",900,360,500,70,3,4600,"W"],["Fire Catapult",950,1350,600,90,6,9000,"W"],
+    ["Senator",30750,27200,45000,37500,5,90700,"R"],["Settler",4600,4200,5800,4400,1,26900,"R"]
+  ],
+  Gauls: [
+    ["Phalanx",100,130,55,30,1,1040,"B"],["Swordsman",140,150,185,60,1,1440,"B"],
+    ["Pathfinder",170,150,20,40,2,1360,"S"],["Theutates Thunder",350,450,230,60,2,2480,"S"],["Druidrider",360,330,280,120,2,2560,"S"],["Haeduan",500,620,675,170,3,3120,"S"],
+    ["Ram",950,555,330,75,3,5000,"W"],["Trebuchet",960,1450,630,90,6,9000,"W"],
+    ["Chieftain",30750,45400,31000,37500,4,90700,"R"],["Settler",4400,5600,4200,3900,1,22700,"R"]
+  ],
+  Egyptians: [
+    ["Slave Militia",45,60,30,15,1,530,"B"],["Ash Warden",115,100,145,60,1,1320,"B"],["Khopesh Warrior",170,180,220,80,1,1440,"B"],
+    ["Sopdu Explorer",170,150,20,40,2,1360,"S"],["Anhur Guard",360,330,280,120,2,2560,"S"],["Resheph Chariot",450,560,610,180,3,3240,"S"],
+    ["Ram",995,575,340,80,3,4800,"W"],["Stone Catapult",980,1510,660,100,6,9000,"W"],
+    ["Nomarch",34000,50000,34000,42000,4,90700,"R"],["Settler",5040,6510,4830,4620,1,24800,"R"]
+  ],
+  Huns: [
+    ["Mercenary",130,80,40,40,1,810,"B"],["Bowman",140,110,60,60,1,1120,"B"],
+    ["Spotter",170,150,20,40,2,1360,"S"],["Steppe Rider",290,370,190,45,2,2400,"S"],["Marksman",320,350,330,50,2,2480,"S"],["Marauder",450,560,610,140,3,2990,"S"],
+    ["Ram",1060,330,360,70,3,4400,"W"],["Catapult",950,1280,620,60,6,9000,"W"],
+    ["Logades",37200,27600,25200,27600,4,90700,"R"],["Settler",6100,4600,4800,5400,1,28950,"R"]
+  ],
+  Spartans: [
+    ["Hoplite",110,185,110,35,1,0,"B"],["Sentinel",185,150,35,75,1,0,"B"],["Shieldsman",145,95,245,45,1,0,"B"],["Twinsteel Therion",130,200,400,65,1,0,"B"],
+    ["Elpida Rider",555,445,330,110,2,0,"S"],["Corinthian Crusher",660,495,995,165,3,0,"S"],
+    ["Ram",525,260,790,130,3,0,"W"],["Ballista",550,1240,825,135,6,0,"W"],
+    ["Ephor",33450,30665,36240,13935,4,0,"R"],["Settler",5115,5580,6045,3255,1,0,"R"]
+  ]
+};
+/* carry per merchant, speed fields/h at 1x */
+const MERCH = { Teutons:[1000,12], Romans:[500,16], Gauls:[750,24], Egyptians:[750,16], Huns:[500,20], Spartans:[500,14] };
+const BLDG_LABEL = { B:"Barracks level", S:"Stable level", W:"Workshop level", R:"Residence or palace level" };
+
+/* name, level-1 wood, clay, iron, crop, growth per level, max level */
+const BUILDINGS = [
+  ["Woodcutter",40,100,50,60,1.67,20],["Clay Pit",80,40,80,50,1.67,20],["Iron Mine",100,80,30,60,1.67,20],["Cropland",70,90,70,20,1.67,20],
+  ["Main Building",70,40,60,20,1.28,20],["Warehouse",130,160,90,40,1.28,20],["Granary",80,100,70,20,1.28,20],
+  ["Marketplace",80,70,120,70,1.28,20],["Rally Point",110,160,90,70,1.28,20],["Barracks",210,140,260,120,1.28,20],
+  ["Stable",260,140,220,100,1.28,20],["Workshop",460,510,600,320,1.28,20],["Academy",220,160,90,40,1.28,20],
+  ["Smithy",170,200,380,130,1.28,20],["Residence",580,460,350,180,1.28,20],["Palace",550,800,750,250,1.28,20],
+  ["Embassy",180,130,150,80,1.28,20],["Cranny",40,50,30,10,1.28,10],["Town Hall",1250,1110,1260,600,1.28,20],
+  ["Trade Office",1400,1330,1200,400,1.28,20],["Tournament Square",1750,2250,1530,240,1.28,20],["Hero's Mansion",700,670,700,240,1.33,20],
+  ["Treasury",2880,2740,2580,990,1.26,20],["Stonemason's Lodge",155,130,125,70,1.28,20],
+  ["City Wall",70,90,170,70,1.28,20],["Earth Wall",120,200,0,80,1.28,20],["Palisade",160,100,0,60,1.28,20],
+  ["Sawmill",520,380,290,90,1.80,5],["Brickyard",440,480,320,50,1.80,5],["Iron Foundry",200,450,510,120,1.80,5],
+  ["Grain Mill",500,440,380,1240,1.80,5],["Bakery",1200,1480,870,1600,1.80,5],
+  ["Great Barracks",630,420,780,360,1.28,20],["Great Stable",780,420,660,300,1.28,20],
+  ["Great Warehouse",650,800,450,200,1.28,20],["Great Granary",400,500,350,100,1.28,20],
+  ["Brewery",1460,930,1250,1740,1.40,20],["Trapper",80,120,70,90,1.28,20],["Horse Drinking Trough",780,420,660,540,1.28,20]
+];
+const NAMES = ["Wood","Clay","Iron","Crop"];
+const COLORS = ["var(--wood)","var(--clay)","var(--iron)","var(--crop)"];
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const toNum = v => { const n = parseInt(String(v).replace(/[^\d]/g, ""), 10); return isNaN(n) ? 0 : n; };
+const num = id => toNum($(id).value);
+const round5 = v => Math.round(v / 5) * 5;
+
+function fmtTime(s) {
+  if (!isFinite(s) || s <= 0) return "0:00:00";
+  s = Math.round(s);
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  const hms = `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  return d ? `${d}d ${hms}` : hms;
+}
+
+function levelCost(b, L) {
+  const B = BUILDINGS[b];
+  return [0,1,2,3].map(i => B[i+1] === 0 ? 0 : round5(B[i+1] * Math.pow(B[5], L - 1)));
+}
+function rangeCost(b, from, to) {
+  const tot = [0,0,0,0], peak = [0,0,0,0];
+  for (let L = from + 1; L <= to; L++) {
+    const c = levelCost(b, L);
+    for (let i = 0; i < 4; i++) { tot[i] += c[i]; peak[i] = Math.max(peak[i], c[i]); }
+  }
+  return { tot, peak };
+}
+
+/* ---- state ---- */
+let mode = "max";
+let builds = [];
+
+const tribeSel = $("tribe"), unitSel = $("unit");
+Object.keys(UNITS).forEach(t => tribeSel.add(new Option(t, t)));
+function fillUnits() { unitSel.innerHTML = ""; UNITS[tribeSel.value].forEach((u, i) => unitSel.add(new Option(u[0], i))); }
+function loadUnit() {
+  const u = UNITS[tribeSel.value][unitSel.value];
+  for (let i = 0; i < 4; i++) $("cost" + i).value = u[i+1];
+  $("upkeep").value = u[5];
+  $("baseTime").value = u[6] || "";
+  $("lvlLabel").textContent = BLDG_LABEL[u[7]];
+}
+function loadMerchant() { const m = MERCH[tribeSel.value]; $("merchCap").value = m[0]; $("merchSpeed").value = m[1]; }
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m ? "true" : "false"));
+  $("troopFields").hidden = m === "none";
+  $("countWrap").hidden = m !== "count";
+  $("hoursWrap").hidden = m !== "time";
+  $("minsWrap").hidden = m !== "time";
+  calc();
+}
+
+function buildOptions(sel) {
+  return BUILDINGS.map((b, i) => `<option value="${i}"${i === sel ? " selected" : ""}>${b[0]}</option>`).join("");
+}
+function renderBuilds() {
+  const box = $("builds");
+  if (!builds.length) { box.innerHTML = `<p class="hint" style="margin-top:0">No upgrades yet. Add a building to include its cost in the plan.</p>`; return; }
+  box.innerHTML = builds.map((r, i) => `
+    <div class="brow" data-i="${i}">
+      <div class="brow-top">
+        <div><label for="bsel${i}">Building</label><select id="bsel${i}" data-f="b">${buildOptions(r.b)}</select></div>
+        <button type="button" class="remove" data-remove="${i}" aria-label="Remove ${BUILDINGS[r.b][0]}">Remove</button>
+      </div>
+      <div class="brow-nums">
+        <div><label for="bfrom${i}">Current level</label><input id="bfrom${i}" data-f="from" inputmode="numeric" value="${r.from}"></div>
+        <div><label for="bto${i}">Target level</label><input id="bto${i}" data-f="to" inputmode="numeric" value="${r.to}"></div>
+        <div><label for="bqty${i}">How many</label><input id="bqty${i}" data-f="qty" inputmode="numeric" value="${r.qty}"></div>
+      </div>
+      <div class="cost-line" id="bcost${i}"></div>
+    </div>`).join("");
+}
+
+/* ---- main calculation ---- */
+function calc() {
+  const have = [0,1,2,3].map(i => num("have" + i));
+  const wh = num("wh"), gr = num("gr");
+  const caps = [wh || Infinity, wh || Infinity, wh || Infinity, gr || Infinity];
+  const speed = parseInt($("speed").value, 10) || 1;
+  const haveTotal = have.reduce((a, b) => a + b, 0);
+
+  /* buildings */
+  const bTot = [0,0,0,0], bPeak = [0,0,0,0];
+  builds.forEach((r, i) => {
+    const max = BUILDINGS[r.b][6];
+    const from = Math.min(toNum(r.from), max), to = Math.min(toNum(r.to), max), qty = Math.max(1, toNum(r.qty) || 1);
+    const el = $("bcost" + i);
+    if (to <= from) { if (el) el.innerHTML = `<span class="hint" style="margin:0">Set a target level above ${from}${to > max ? "" : ""}. Max level is ${max}.</span>`; return; }
+    const { tot, peak } = rangeCost(r.b, from, to);
+    for (let k = 0; k < 4; k++) { bTot[k] += tot[k] * qty; bPeak[k] = Math.max(bPeak[k], peak[k]); }
+    if (el) el.innerHTML = [0,1,2,3].map(k => `<span style="--c:${COLORS[k]}"><b>${NAMES[k]}</b> ${fmt(tot[k] * qty)}</span>`).join("") +
+      `<span>Total ${fmt(tot.reduce((a, b) => a + b, 0) * qty)}</span>`;
+  });
+  const bSum = bTot.reduce((a, b) => a + b, 0);
+
+  /* troops */
+  const cost = [0,1,2,3].map(i => num("cost" + i));
+  const cSum = cost.reduce((a, b) => a + b, 0);
+  const upkeep = num("upkeep"), base = num("baseTime");
+  const lvl = Math.max(1, num("lvl") || 1), bonus = Math.min(99, num("bonus"));
+  const perUnit = base * Math.pow(0.9, lvl - 1) / speed * (1 - bonus / 100);
+  const unitName = unitSel.options[unitSel.selectedIndex].text;
+  let n = 0, capLimited = -1;
+  if (mode === "max" && cSum > 0) {
+    n = Math.max(0, Math.floor((haveTotal - bSum) / cSum));
+    for (let i = 0; i < 4; i++) {
+      if (cost[i] > 0 && caps[i] !== Infinity && bTot[i] <= caps[i]) {
+        const m = Math.floor((caps[i] - bTot[i]) / cost[i]);
+        if (m < n) { n = m; capLimited = i; }
+      }
+    }
+  } else if (mode === "count") n = num("count");
+  else if (mode === "time") { const secs = (num("hours") * 60 + num("mins")) * 60; n = perUnit > 0 ? Math.floor(secs / perUnit) : 0; }
+
+  if (mode !== "none") {
+    const parts = [`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${unitName}</span></div>`];
+    if (perUnit > 0) {
+      parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(perUnit)}</strong></div>`);
+      parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(perUnit * n)}</strong></div>`);
+    } else parts.push(`<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
+    parts.push(`<div class="stat"><span>Upkeep</span><strong>${fmt(n * upkeep)} crop/h</strong></div>`);
+    $("troopOut").innerHTML = parts.join("");
+  }
+  const tN = mode === "none" ? 0 : n;
+  const need = [0,1,2,3].map(i => bTot[i] + cost[i] * tN);
+  const needSum = need.reduce((a, b) => a + b, 0);
+
+  /* verdict */
+  const shortEach = need.map((v, i) => Math.max(0, v - have[i]));
+  const shortSum = shortEach.reduce((a, b) => a + b, 0);
+  const coveredDirect = shortSum === 0;
+  const coveredNpc = haveTotal >= needSum;
+  let verdict;
+  if (needSum === 0) verdict = "Add buildings or troops to see what they cost.";
+  else if (coveredDirect) verdict = `You already have enough. No trade needed.`;
+  else if (coveredNpc) verdict = `One NPC trade covers it. You have ${fmt(haveTotal - needSum)} to spare.`;
+  else verdict = `You're ${fmt(needSum - haveTotal)} resources short, even after trading.`;
+  $("verdict").textContent = verdict;
+
+  /* NPC targets */
+  const useNpc = coveredNpc && !coveredDirect;
+  const target = need.slice();
+  let left = haveTotal - needSum;
+  if (useNpc) {
+    const pref = parseInt($("pref").value, 10);
+    for (const i of [pref, 3, 0, 1, 2].filter((v, k, a) => a.indexOf(v) === k)) {
+      if (left <= 0) break;
+      const room = caps[i] === Infinity ? left : Math.max(0, caps[i] - target[i]);
+      const add = Math.min(room, left); target[i] += add; left -= add;
+    }
+  }
+  $("prefWrap").hidden = !useNpc;
+  $("lastHead").textContent = useNpc ? "Set NPC to" : "Missing";
+
+  const body = $("planBody"); body.innerHTML = "";
+  for (let i = 0; i < 4; i++) {
+    const tr = document.createElement("tr"); tr.style.setProperty("--c", COLORS[i]);
+    let last;
+    if (useNpc) {
+      const d = target[i] - have[i], cls = d > 0 ? "up" : d < 0 ? "down" : "zero";
+      const pct = caps[i] === Infinity ? null : Math.min(100, target[i] / caps[i] * 100);
+      last = `<span class="strong">${fmt(target[i])}</span> <span class="${cls}">(${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d))})</span>` +
+        (pct === null ? "" : `<div class="bar"><i style="width:${pct}%"></i></div>`);
+    } else last = shortEach[i] > 0 ? `<span class="down">${fmt(shortEach[i])}</span>` : `<span class="zero">0</span>`;
+    tr.innerHTML = `<td>${NAMES[i]}</td><td>${fmt(have[i])}</td><td>${fmt(need[i])}</td><td>${last}</td>`;
+    body.appendChild(tr);
+  }
+  $("planFoot").innerHTML = `<tr><td>Total</td><td>${fmt(haveTotal)}</td><td>${fmt(needSum)}</td><td>${useNpc ? fmt(target.reduce((a,b)=>a+b,0)) : fmt(shortSum)}</td></tr>`;
+
+  /* notes */
+  const notes = [];
+  if (bSum > 0) notes.push(`Buildings: ${fmt(bSum)}.`);
+  if (tN > 0) notes.push(`Troops: ${fmt(tN * cSum)}.`);
+  if (mode === "max" && capLimited >= 0) notes.push(`<span class="warn">Your ${capLimited === 3 ? "granary" : "warehouse"} caps the troop count: more ${NAMES[capLimited].toLowerCase()} wouldn't fit.</span>`);
+  const over = [0,1,2,3].filter(i => caps[i] !== Infinity && need[i] > caps[i]);
+  if (over.length) notes.push(`<span class="warn">${over.map(i => NAMES[i]).join(", ")} needed is more than your storage holds at once, so you'll have to do this in more than one round.</span>`);
+  const peakOver = [0,1,2,3].filter(i => caps[i] !== Infinity && bPeak[i] > caps[i]);
+  if (peakOver.length) notes.push(`<span class="warn">At least one upgrade level costs more ${peakOver.map(i => NAMES[i].toLowerCase()).join(" and ")} than your storage can hold. Upgrade the ${peakOver.includes(3) && peakOver.length === 1 ? "granary" : peakOver.includes(3) ? "warehouse and granary" : "warehouse"} first.</span>`);
+  if (!wh || !gr) notes.push("Add warehouse and granary capacity so the plan respects storage.");
+  $("planNote").innerHTML = notes.join(" ");
+
+  /* sending */
+  const cap = num("merchCap"), mspd = num("merchSpeed"), dist = parseFloat($("dist").value) || 0;
+  const merchants = amt => cap > 0 ? Math.ceil(amt / cap) : 0;
+  const travel = mspd > 0 && dist > 0 ? dist / (mspd * speed) * 3600 : 0;
+  const travelTxt = travel ? ` Travel time one way: <strong>${fmtTime(travel)}</strong>.` : " Add a distance to see travel time.";
+  let send;
+  if (needSum === 0) send = `<p class="zero">Nothing to send yet.</p>`;
+  else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything.</p>`;
+  else {
+    const exact = shortEach.map((v, i) => v > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(v)}` : null).filter(Boolean).join(", ");
+    send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(shortSum)} total, ${fmt(merchants(shortSum))} merchant${merchants(shortSum) === 1 ? "" : "s"}.</p>`;
+    if (!coveredNpc) {
+      const gap = needSum - haveTotal;
+      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts.</p>`;
+    } else send += `<p><strong>Or skip sending</strong> and use the NPC trade above.</p>`;
+    send += `<p class="hint" style="margin:0">${travelTxt.trim()}</p>`;
+  }
+  $("sendBox").innerHTML = send;
+
+  $("unitWarn").innerHTML = tribeSel.value === "Spartans"
+    ? `<span class="warn">Spartan costs are unverified and base times are blank. Check them against your game.</span>` : "";
+
+  save();
+}
+
+/* ---- persistence ---- */
+const FIELDS = ["have0","have1","have2","have3","wh","gr","lvl","count","hours","mins","bonus","dist","merchCap","merchSpeed"];
+function save() {
+  try {
+    const s = { tribe: tribeSel.value, unit: unitSel.value, speed: $("speed").value, pref: $("pref").value, mode, builds };
+    FIELDS.forEach(f => s[f] = $(f).value);
+    localStorage.setItem("village-planner", JSON.stringify(s));
+  } catch (e) {}
+}
+function restore() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem("village-planner")); } catch (e) {}
+  if (!s) { try { const old = JSON.parse(localStorage.getItem("npc-planner")); if (old) s = old; } catch (e) {} }
+  if (s && UNITS[s.tribe]) tribeSel.value = s.tribe;
+  fillUnits();
+  if (s && s.unit != null && unitSel.options[s.unit]) unitSel.value = s.unit;
+  loadUnit(); loadMerchant();
+  $("lvl").value = 1; $("count").value = 100; $("hours").value = 8; $("mins").value = 0;
+  if (s) {
+    FIELDS.forEach(f => { if (s[f] != null && s[f] !== "") $(f).value = s[f]; });
+    if (s.speed) $("speed").value = s.speed;
+    if (s.pref) $("pref").value = s.pref;
+    if (Array.isArray(s.builds)) builds = s.builds.filter(r => BUILDINGS[r.b]);
+    if (s.mode) mode = s.mode;
+  }
+}
+
+/* ---- events ---- */
+tribeSel.addEventListener("change", () => { fillUnits(); loadUnit(); loadMerchant(); calc(); });
+unitSel.addEventListener("change", () => { loadUnit(); calc(); });
+$("resetUnit").addEventListener("click", () => { loadUnit(); calc(); });
+$("speed").addEventListener("change", calc);
+$("pref").addEventListener("change", calc);
+document.querySelectorAll("main > section input, details input").forEach(el => el.addEventListener("input", calc));
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+$("addBuild").addEventListener("click", () => {
+  builds.push({ b: 0, from: 0, to: 1, qty: 1 });
+  renderBuilds(); calc();
+  const sel = $("bsel" + (builds.length - 1)); if (sel) sel.focus();
+});
+$("builds").addEventListener("input", e => {
+  const row = e.target.closest(".brow"); if (!row) return;
+  const i = +row.dataset.i, f = e.target.dataset.f;
+  if (f === "b") builds[i].b = +e.target.value; else builds[i][f] = e.target.value;
+  calc();
+});
+$("builds").addEventListener("change", e => { if (e.target.dataset.f === "b") { renderBuilds(); calc(); } });
+$("builds").addEventListener("click", e => {
+  const r = e.target.dataset.remove; if (r == null) return;
+  builds.splice(+r, 1); renderBuilds(); calc();
+});
+
+restore();
+renderBuilds();
+setMode(mode);
+</script>
+</body>
+</html>
