@@ -53,6 +53,9 @@ Loyalty: \u202d${n("100")}%\u202c
 Villages \u202d${n("4")}/${n("4")}\u202c
 Northgate
 \u202d(${n("12")}|${n("34")})\u202c
+Eastmoor
+\u202d(${n("10")}|${n("−33")})\u202c
+South Hill (${n("-56")}|${n("78")})
 Task overview`;
 
 describe("parseOverview", () => {
@@ -69,6 +72,10 @@ describe("parseOverview", () => {
       { name: "South Hill", res: [3136, 4111, 3518, 540] },
       { name: "Westwood", res: [1151, 1541, 1475, 186] },
     ]);
+  });
+
+  it("reads coordinates from the village list, on their own line or after the name", () => {
+    expect(r.coords).toEqual({ Northgate: { x: 12, y: 34 }, Eastmoor: { x: 10, y: -33 }, "South Hill": { x: -56, y: 78 } });
   });
 
   it("works out which village is active", () => {
@@ -89,7 +96,7 @@ describe("parseOverview", () => {
   });
 
   it("finds nothing in unrelated text", () => {
-    expect(parseOverview("hello\nworld")).toEqual({ stock: null, villages: [], activeName: null });
+    expect(parseOverview("hello\nworld")).toEqual({ stock: null, villages: [], activeName: null, coords: {} });
   });
 
   it("falls back to the line before Population when the top bar doesn't match a row", () => {

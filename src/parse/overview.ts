@@ -8,6 +8,8 @@ export interface OverviewImport {
   villages: { name: string; res: Res4 }[];
   /** Which table row is the active village, if it could be told. */
   activeName: string | null;
+  /** Map coordinates per village name, from the village list. */
+  coords: Record<string, { x: number; y: number }>;
 }
 
 /** Direction marks the game wraps around every number. */
@@ -15,6 +17,8 @@ const BIDI = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 /** A whole number with optional thousands separators (comma, dot, apostrophe, narrow space). */
 const NUM = String.raw`\d{1,3}(?:[.,'\u202f]?\d{3})*`;
 const NUM_LINE = new RegExp(`^[-−]?${NUM}$`);
+/** `(12|34)`, optionally after the village name on the same line. */
+const COORD = /^(.*?)\s*\(\s*([-−]?\d+)\s*\|\s*([-−]?\d+)\s*\)$/;
 const ROW = new RegExp(String.raw`^(.*?\S)\s+(${NUM})\s+(${NUM})\s+(${NUM})\s+(${NUM})(?:\s+\d+\s*/\s*\d+)?$`);
 
 const toInt = (s: string) => { const n = parseInt(s.replace(/[^\d]/g, ""), 10) * (/^[-−]/.test(s) ? -1 : 1); return isNaN(n) ? 0 : n; };
@@ -54,7 +58,14 @@ export function parseOverview(text: string): OverviewImport {
     if (last.res.every((v, k) => v === sum(rest.map(r => r.res[k])))) villages = rest;
   }
 
-  return { stock, villages, activeName: findActive(lines, stock, villages) };
+  const coords: OverviewImport["coords"] = {};
+  lines.forEach((l, k) => {
+    const m = COORD.exec(l);
+    const name = m && (m[1] || (k > 0 ? lines[k - 1] : ""));
+    if (m && name) coords[name] = { x: toInt(m[2]), y: toInt(m[3]) };
+  });
+
+  return { stock, villages, activeName: findActive(lines, stock, villages), coords };
 }
 
 /** The table row closest to the top bar, or failing that the line before "Population". */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Res4 } from "../types";
-import { maxTroopMix, maxTroops, mixDuration, troopMixForTime, troopsForTime, trainingTime } from "./troops";
+import { maxTroopMix, maxTroops, mixDuration, planTroops, type PlanRow } from "./troops";
 
 const NONE: Res4 = [0, 0, 0, 0];
 const NO_CAPS: Res4 = [Infinity, Infinity, Infinity, Infinity];
@@ -48,30 +48,60 @@ describe("maxTroopMix", () => {
   });
 });
 
-describe("troopMixForTime", () => {
-  it("matches troopsForTime for a single row", () => {
-    const r = rng(2);
-    for (let k = 0; k < 5000; k++) {
-      const per = trainingTime(Math.floor(r() * 9000), Math.floor(r() * 21), [1, 2, 3, 5, 10][Math.floor(r() * 5)], Math.floor(r() * 100));
-      const secs = Math.floor(r() * 200000);
-      expect(troopMixForTime([{ perUnit: per, weight: 1, group: "B" }], secs)).toEqual([troopsForTime(secs, per)]);
-    }
+describe("maxTroopMix with hero resources", () => {
+  it("lets hero resources limit only through storage", () => {
+    // Crop from the hero: 250 per clubswinger becomes 210 tradable (95 + 75 + 40).
+    const r = maxTroopMix([{ cost: CLUB, weight: 1 }], 2100, NONE, NO_CAPS, [true, true, true, false]);
+    expect(r.counts).toEqual([10]);
   });
 
-  it("splits a shared queue by ratio", () => {
-    // Barracks: 2 × 100s + 1 × 200s = 400s per batch, 4000s → 10 batches.
-    const rows = [{ perUnit: 100, weight: 2, group: "B" }, { perUnit: 200, weight: 1, group: "B" }];
-    expect(troopMixForTime(rows, 4000)).toEqual([20, 10]);
+  it("still applies the granary to hero crop", () => {
+    const r = maxTroopMix([{ cost: CLUB, weight: 1 }], 1_000_000, NONE, [Infinity, Infinity, Infinity, 400], [true, true, true, false]);
+    expect(r).toEqual({ counts: [10], capLimited: 3 });
   });
 
-  it("runs different buildings in parallel", () => {
-    const rows = [{ perUnit: 100, weight: 1, group: "B" }, { perUnit: 300, weight: 1, group: "S" }];
-    expect(troopMixForTime(rows, 3000)).toEqual([30, 10]);
+  it("ignores other costs in hero resources", () => {
+    const r = maxTroopMix([{ cost: CLUB, weight: 1 }], 2100, [0, 0, 0, 5000], NO_CAPS, [true, true, true, false]);
+    expect(r.counts).toEqual([10]);
+  });
+});
+
+const row = (p: Partial<PlanRow>): PlanRow => ({ mode: "max", cost: CLUB, weight: 1, count: 0, seconds: 0, perUnit: 0, ...p });
+
+describe("planTroops", () => {
+  it("matches the single-mode results for one row", () => {
+    expect(planTroops([row({})], 25272, NONE, NO_CAPS).counts).toEqual([101]);
+    expect(planTroops([row({ mode: "count", count: 40 })], 0, NONE, NO_CAPS).counts).toEqual([40]);
+    expect(planTroops([row({ mode: "time", seconds: 8 * 3600, perUnit: 720 })], 0, NONE, NO_CAPS).counts).toEqual([40]);
   });
 
-  it("gives 0 for rows without a training time", () => {
-    const rows = [{ perUnit: 0, weight: 1, group: "B" }, { perUnit: 100, weight: 1, group: "B" }];
-    expect(troopMixForTime(rows, 1000)).toEqual([0, 10]);
+  it("pays set numbers and timed troops first, then fills the max rows", () => {
+    // 10 spearmen (3,400) + 1 hour of clubswingers at 720s (5 units, 1,250) leave 10,000 - 4,650 = 5,350 → 21 clubswingers.
+    const r = planTroops([
+      row({ mode: "count", cost: SPEAR, count: 10 }),
+      row({ mode: "time", seconds: 3600, perUnit: 720 }),
+      row({ mode: "max" }),
+    ], 10_000, NONE, NO_CAPS);
+    expect(r.counts).toEqual([10, 5, 21]);
+  });
+
+  it("splits what is left between max rows by ratio", () => {
+    const r = planTroops([row({ mode: "count", cost: SPEAR, count: 10 }), row({ weight: 2 }), row({ cost: SPEAR, weight: 1 })], 3400 + 8400, NONE, NO_CAPS);
+    expect(r.counts).toEqual([10, 20, 10]);
+  });
+
+  it("gives max rows nothing when fixed rows already use everything", () => {
+    expect(planTroops([row({ mode: "count", count: 100 }), row({})], 1000, NONE, NO_CAPS).counts).toEqual([100, 0]);
+  });
+
+  it("counts fixed rows against storage before the max rows", () => {
+    // Granary 1,000: 20 fixed clubswingers use 800 crop, leaving room for 5 more.
+    const r = planTroops([row({ mode: "count", count: 20 }), row({})], 1_000_000, NONE, [Infinity, Infinity, Infinity, 1000]);
+    expect(r).toEqual({ counts: [20, 5], capLimited: 3 });
+  });
+
+  it("works with no rows", () => {
+    expect(planTroops([], 1000, NONE, NO_CAPS)).toEqual({ counts: [], capLimited: -1 });
   });
 });
 

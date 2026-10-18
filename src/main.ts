@@ -3,11 +3,11 @@ import { BUILDINGS, CELEBRATIONS, MERCH, UNITS } from "./data";
 import { fmt, fmtTime, toNum } from "./calc/format";
 import { buildingTotals } from "./calc/buildings";
 import { celebrationCost } from "./calc/celebrations";
-import { maxTroopMix, mixDuration, trainingTime, troopMixForTime, type TimedRow } from "./calc/troops";
+import { mixDuration, planTroops, trainingTime, type TroopMode } from "./calc/troops";
 import { npcTargets, planNeeds, storageCaps } from "./calc/npc";
-import { merchantsNeeded, travelSeconds } from "./calc/merchants";
+import { mapDistance, merchantsNeeded, travelSeconds } from "./calc/merchants";
 import { parseOverview, type OverviewImport } from "./parse/overview";
-import { loadStore, newId, newVillage, saveStore, type Store, type TroopRow, type VillageState } from "./storage";
+import { loadStore, newId, newTroop, newVillage, normalizeTroops, saveStore, type Store, type TroopRow, type VillageState } from "./storage";
 
 const TRAIN_NAME: Record<TrainingBuilding, string> = { B: "Barracks", S: "Stable", W: "Workshop", R: "Residence or palace" };
 const TRAIN_ORDER: TrainingBuilding[] = ["B", "S", "W", "R"];
@@ -15,11 +15,16 @@ const NAMES = ["Wood", "Clay", "Iron", "Crop"];
 const COLORS = ["var(--wood)", "var(--clay)", "var(--iron)", "var(--crop)"];
 const RES = [0, 1, 2, 3] as const;
 /** Plain inputs saved per village as typed. */
-const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "hours", "mins", "dist", "merchCap", "merchSpeed"];
+const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "x", "y", "dist", "merchCap", "merchSpeed"];
+const MODES: [TroopMode, string][] = [["max", "Max possible"], ["count", "Set number"], ["time", "Fill a time"]];
 const $ = <T extends HTMLElement = HTMLInputElement>(id: string) => document.getElementById(id) as T;
 const num = (id: string) => toNum($(id).value);
 const res4 = (f: (i: number) => number) => RES.map(f) as Res4;
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+/** A map coordinate as typed, or null. Accepts the minus sign the game uses. */
+const coord = (s: string | undefined) => { const t = String(s ?? "").trim().replace("−", "-"); return /^-?\d+$/.test(t) ? parseInt(t, 10) : null; };
+const coordsOf = (x: string | undefined, y: string | undefined) => { const a = coord(x), b = coord(y); return a === null || b === null ? null : { x: a, y: b }; };
+const joinAnd = (a: string[]) => a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`;
 /** Blank or invalid ratio counts as 1; 0 leaves the row out. */
 const ratio = (s: string) => { const n = parseFloat(String(s).replace(",", ".")); return isFinite(n) && n >= 0 ? n : 1; };
 
@@ -48,6 +53,19 @@ function fillVillages() {
   for (const [id, s] of Object.entries(store.villages)) villageSel.add(new Option(s.name, id));
   villageSel.value = store.current;
   $<HTMLButtonElement>("deleteVillage").disabled = Object.keys(store.villages).length < 2;
+  fillSendFrom();
+}
+function fillSendFrom() {
+  const sel = $<HTMLSelectElement>("sendFrom");
+  if (v.sendFrom && (v.sendFrom === store.current || !store.villages[v.sendFrom])) v.sendFrom = "";
+  sel.innerHTML = "";
+  sel.add(new Option("Another village (type the distance)", ""));
+  for (const [id, s] of Object.entries(store.villages)) {
+    if (id === store.current) continue;
+    const c = coordsOf(s.fields.x, s.fields.y);
+    sel.add(new Option(c ? `${s.name} (${c.x}|${c.y})` : s.name, id));
+  }
+  sel.value = v.sendFrom ?? "";
 }
 function switchVillage(id: string) {
   save();
@@ -62,25 +80,28 @@ function applyVillage() {
   $("pref").value = v.pref || "3";
   FIELDS.forEach(f => $(f).value = "");
   loadMerchant();
-  $("hours").value = "8"; $("mins").value = "0";
   FIELDS.forEach(f => { const s = v.fields[f]; if (s != null && s !== "") $(f).value = s; });
   v.celebs = CELEBRATIONS.map((_, i) => v.celebs?.[i] ?? "");
   v.celebs.forEach((s, i) => $("celeb" + i).value = s);
   const units = UNITS[v.tribe];
   v.troops = (v.troops ?? []).filter(r => units[r.unit]);
-  if (!v.troops.length) v.troops = [{ unit: 0, ratio: "1", count: "100" }];
+  normalizeTroops(v);
   v.builds = (v.builds ?? []).filter(r => BUILDINGS[r.b]);
   v.train ??= {};
+  v.hero = RES.map(i => !!v.hero?.[i]);
+  v.hero.forEach((h, i) => $("hero" + i).checked = h);
   fillVillages();
-  fillStatUnits(v.troops[0].unit);
+  fillStatUnits(v.troops[0]?.unit ?? 0);
   renderBuilds();
-  setMode(v.mode || "max");
+  renderTroops();
+  calc();
 }
 
 /* ---- import from the game ---- */
 interface ImportRow { name: string; res: Res4; active: boolean }
 let importRows: ImportRow[] = [];
 let importStock: OverviewImport["stock"] = null;
+let importCoords: OverviewImport["coords"] = {};
 
 const sameName = (a: string | undefined, b: string) => !!a && a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -88,6 +109,7 @@ function previewImport() {
   const text = $<HTMLTextAreaElement>("importText").value;
   const r = parseOverview(text);
   importStock = r.stock;
+  importCoords = r.coords;
   importRows = r.villages.map(x => ({ ...x, active: x.name === r.activeName }));
   // Top bar only (e.g. copied from another page): it belongs to the village shown here.
   if (!importRows.length && r.stock) importRows = [{ name: "", res: r.stock.res, active: true }];
@@ -128,6 +150,8 @@ function applyImport() {
     } else updated++;
     const target = store.villages[id];
     if (row.name) target.gameName = row.name;
+    const c = importCoords[row.name];
+    if (c) { target.fields.x = String(c.x); target.fields.y = String(c.y); }
     const stock = row.active ? importStock : null;
     (stock ? stock.res : row.res).forEach((x, k) => target.fields["have" + k] = String(x));
     if (stock) { target.fields.wh = String(stock.warehouse); target.fields.gr = String(stock.granary); activeId = id; }
@@ -159,16 +183,7 @@ function saveStats() {
 }
 function loadMerchant() { const m = MERCH[tribeSel.value]; $("merchCap").value = String(m.capacity); $("merchSpeed").value = String(m.speed); }
 
-/* ---- mode and rows ---- */
-function setMode(m: string) {
-  v.mode = m;
-  document.querySelectorAll<HTMLButtonElement>(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m ? "true" : "false"));
-  $("troopFields").hidden = m === "none";
-  $("timeWrap").hidden = m !== "time";
-  renderTroops();
-  calc();
-}
-
+/* ---- rows ---- */
 function buildOptions(sel: number) {
   return BUILDINGS.map((b, i) => `<option value="${i}"${i === sel ? " selected" : ""}>${b.name}</option>`).join("");
 }
@@ -191,22 +206,30 @@ function renderBuilds() {
 }
 
 function renderTroops() {
-  const units = UNITS[v.tribe], many = v.troops.length > 1, counting = v.mode === "count";
+  const units = UNITS[v.tribe], many = v.troops.length > 1;
+  const maxRows = v.troops.filter(r => r.mode === "max").length;
   $("troops").innerHTML = v.troops.map((r, i) => {
     const opts = units.map((u, k) => `<option value="${k}"${k === r.unit ? " selected" : ""}>${u.name}</option>`).join("");
-    const field = counting
-      ? `<div><label for="tcount${i}">Number of units</label><input id="tcount${i}" data-f="count" inputmode="numeric" autocomplete="off" value="${esc(r.count)}"></div>`
-      : `<div><label for="tratio${i}">Ratio</label><input id="tratio${i}" data-f="ratio" inputmode="decimal" autocomplete="off" value="${esc(r.ratio)}"></div>`;
+    const modes = MODES.map(([m, label]) => `<option value="${m}"${m === r.mode ? " selected" : ""}>${label}</option>`).join("");
+    const input = (f: "ratio" | "count" | "hours" | "mins", label: string, mode = "numeric", cls = "") =>
+      `<div${cls ? ` class="${cls}"` : ""}><label for="t${f}${i}">${label}</label><input id="t${f}${i}" data-f="${f}" inputmode="${mode}" autocomplete="off" value="${esc(r[f] ?? "")}"></div>`;
+    const fields = r.mode === "count" ? input("count", "Number of units", "numeric", "span2")
+      : r.mode === "time" ? `<div class="trow-time">${input("hours", "Hours")}${input("mins", "Minutes")}</div>`
+      : maxRows > 1 ? input("ratio", "Ratio", "decimal", "span2") : "";
     return `
     <div class="brow" data-i="${i}">
       <div class="brow-top">
         <div><label for="tunit${i}">Unit</label><select id="tunit${i}" data-f="unit">${opts}</select></div>
-        ${many ? `<button type="button" class="remove" data-remove="${i}" aria-label="Remove ${esc(units[r.unit].name)}">Remove</button>` : ""}
+        <button type="button" class="remove" data-remove="${i}" aria-label="Remove ${esc(units[r.unit].name)}">Remove</button>
       </div>
-      ${many || counting ? `<div class="brow-nums">${field}<div class="trow-out" id="tout${i}"></div></div>` : ""}
+      <div class="brow-nums trow-nums">
+        <div><label for="tmode${i}">How many</label><select id="tmode${i}" data-f="mode">${modes}</select></div>
+        ${fields}
+      </div>
+      ${many ? `<div class="cost-line" id="tout${i}"></div>` : ""}
     </div>`;
-  }).join("");
-  $("ratioHint").hidden = !many || counting;
+  }).join("") || `<p class="hint" style="margin-top:0">No troops planned. Add a troop type to include training in the plan.</p>`;
+  $("ratioHint").hidden = !many;
   renderTrainFields();
 }
 
@@ -246,55 +269,58 @@ function calc() {
   const otherTot = res4(i => bTot[i] + cc.tot[i]);
 
   /* troops */
-  const haveTotal = have.reduce((a, b) => a + b, 0);
+  const tradable = RES.map(i => !v.hero![i]);
+  const haveTrade = have.reduce((a, b, i) => a + (tradable[i] ? b : 0), 0);
   const rows = v.troops.map(r => {
     const u = unitStats(v.tribe, r.unit), t = trainOf(u.building);
-    return { u, perUnit: trainingTime(u.time, toNum(t.lvl), speed, toNum(t.bonus)), weight: ratio(r.ratio), group: u.building };
+    const perUnit = trainingTime(u.time, toNum(t.lvl), speed, toNum(t.bonus));
+    return {
+      u, perUnit, group: u.building,
+      plan: { mode: r.mode!, cost: u.cost, weight: ratio(r.ratio), count: toNum(r.count), seconds: (toNum(r.hours) * 60 + toNum(r.mins)) * 60, perUnit },
+    };
   });
-  const timed: TimedRow[] = rows;
-  let counts = rows.map(() => 0), capLimited = -1;
-  if (v.mode === "max") ({ counts, capLimited } = maxTroopMix(rows.map(r => ({ cost: r.u.cost, weight: r.weight })), haveTotal, otherTot, caps));
-  else if (v.mode === "count") counts = v.troops.map(r => toNum(r.count));
-  else if (v.mode === "time") counts = troopMixForTime(timed, (num("hours") * 60 + num("mins")) * 60);
-  if (v.mode === "none") counts = rows.map(() => 0);
+  const { counts, capLimited } = planTroops(rows.map(r => r.plan), haveTrade, otherTot, caps, tradable);
 
-  if (v.mode !== "none") {
-    const upkeep = rows.reduce((s, r, i) => s + r.u.upkeep * counts[i], 0);
-    const parts = [];
-    if (rows.length === 1) {
-      const [r] = rows, n = counts[0];
-      parts.push(`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${esc(r.u.name)}</span></div>`);
-      if (r.perUnit > 0) {
-        parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(r.perUnit)}</strong></div>`);
-        parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(r.perUnit * n)}</strong></div>`);
-      } else parts.push(`<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
-    } else {
-      rows.forEach((r, i) => {
-        const el = $("tout" + i); if (!el) return;
-        el.innerHTML = `<b>${fmt(counts[i])}</b> ` + (r.perUnit > 0 ? `· each ${fmtTime(r.perUnit)} · all ${fmtTime(r.perUnit * counts[i])}` : `· <span class="warn">no base time</span>`);
-      });
-      parts.push(`<div><div class="big">${fmt(counts.reduce((a, b) => a + b, 0))}</div><span class="hint" style="margin:0">units in total</span></div>`);
-      parts.push(rows.every(r => r.perUnit > 0)
-        ? `<div class="stat"><span>All done in</span><strong>${fmtTime(mixDuration(timed, counts))}</strong></div>`
-        : `<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
-    }
-    parts.push(`<div class="stat"><span>Upkeep</span><strong>${fmt(upkeep)} crop/h</strong></div>`);
-    $("troopOut").innerHTML = parts.join("");
+  const upkeep = rows.reduce((s, r, i) => s + r.u.upkeep * counts[i], 0);
+  const parts = [];
+  if (rows.length === 1) {
+    const [r] = rows, n = counts[0];
+    parts.push(`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${esc(r.u.name)}</span></div>`);
+    if (r.perUnit > 0) {
+      parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(r.perUnit)}</strong></div>`);
+      parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(r.perUnit * n)}</strong></div>`);
+    } else parts.push(`<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
+  } else if (rows.length > 1) {
+    rows.forEach((r, i) => {
+      const el = $("tout" + i); if (!el) return;
+      el.innerHTML = `<span><b>${fmt(counts[i])}</b> units</span>` + (r.perUnit > 0 ? `<span>each ${fmtTime(r.perUnit)}</span><span>all ${fmtTime(r.perUnit * counts[i])}</span>` : `<span class="warn">no base time</span>`);
+    });
+    parts.push(`<div><div class="big">${fmt(counts.reduce((a, b) => a + b, 0))}</div><span class="hint" style="margin:0">units in total</span></div>`);
+    parts.push(rows.every(r => r.perUnit > 0)
+      ? `<div class="stat"><span>All done in</span><strong>${fmtTime(mixDuration(rows, counts))}</strong></div>`
+      : `<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
   }
+  if (rows.length) parts.push(`<div class="stat"><span>Upkeep</span><strong>${fmt(upkeep)} crop/h</strong></div>`);
+  $("troopOut").innerHTML = parts.join("");
   const need = res4(i => otherTot[i] + rows.reduce((s, r, k) => s + r.u.cost[i] * counts[k], 0));
   const troopSum = rows.reduce((s, r, k) => s + r.u.cost.reduce((a, b) => a + b, 0) * counts[k], 0);
 
   /* verdict */
-  const { needSum, shortEach, shortSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need);
+  const { haveTotal, needSum, needAll, shortEach, shortSum, heroTake, heroSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need, tradable);
+  const heroList = joinAnd(RES.filter(i => heroTake[i] > 0).map(i => `${fmt(heroTake[i])} ${NAMES[i].toLowerCase()}`));
+  const heroTxt = heroSum > 0 ? ` Take ${heroList} from the hero.` : "";
   let verdict;
-  if (needSum === 0) verdict = "Add buildings or troops to see what they cost.";
-  else if (coveredDirect) verdict = `You already have enough. No trade needed.`;
-  else if (coveredNpc) verdict = `One NPC trade covers it. You have ${fmt(haveTotal - needSum)} to spare.`;
-  else verdict = `You're ${fmt(needSum - haveTotal)} resources short, even after trading.`;
+  if (needAll === 0) verdict = "Add buildings or troops to see what they cost.";
+  else if (coveredDirect) verdict = heroSum > 0 ? `Enough once you take ${heroList} from the hero. No trade needed.` : `You already have enough. No trade needed.`;
+  else if (coveredNpc) verdict = `One NPC trade covers it. You have ${fmt(haveTotal - needSum)} to spare.` + heroTxt;
+  else verdict = `You're ${fmt(needSum - haveTotal)} resources short, even after trading.` + heroTxt;
   $("verdict").textContent = verdict;
 
   /* NPC targets */
-  const target = useNpc ? npcTargets(need, haveTotal, caps, parseInt($("pref").value, 10)) : need.slice() as Res4;
+  const prefSel = $<HTMLSelectElement>("pref");
+  [...prefSel.options].forEach(o => o.disabled = !tradable[+o.value]);
+  if (!tradable[+prefSel.value]) { const first = [3, 0, 1, 2].find(i => tradable[i]); if (first !== undefined) prefSel.value = String(first); }
+  const target = useNpc ? npcTargets(need, haveTotal, caps, parseInt(prefSel.value, 10), tradable, have) : need.slice() as Res4;
   $("prefWrap").hidden = !useNpc;
   $("lastHead").textContent = useNpc ? "Set NPC to" : "Missing";
 
@@ -302,23 +328,26 @@ function calc() {
   for (let i = 0; i < 4; i++) {
     const tr = document.createElement("tr"); tr.style.setProperty("--c", COLORS[i]);
     let last;
-    if (useNpc) {
+    const bar = (n: number) => caps[i] === Infinity ? "" : `<div class="bar"><i style="width:${Math.min(100, n / caps[i] * 100)}%"></i></div>`;
+    if (!tradable[i]) {
+      const take = heroTake[i] > 0 ? `<span class="up">+${fmt(heroTake[i])} from hero</span>` : "";
+      last = useNpc ? `<span class="strong">${fmt(have[i])}</span> <span class="zero">(keep)</span>${take ? " " + take : ""}${bar(have[i])}`
+        : take || `<span class="zero">0</span>`;
+    } else if (useNpc) {
       const d = target[i] - have[i], cls = d > 0 ? "up" : d < 0 ? "down" : "zero";
-      const pct = caps[i] === Infinity ? null : Math.min(100, target[i] / caps[i] * 100);
-      last = `<span class="strong">${fmt(target[i])}</span> <span class="${cls}">(${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d))})</span>` +
-        (pct === null ? "" : `<div class="bar"><i style="width:${pct}%"></i></div>`);
+      last = `<span class="strong">${fmt(target[i])}</span> <span class="${cls}">(${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d))})</span>` + bar(target[i]);
     } else last = shortEach[i] > 0 ? `<span class="down">${fmt(shortEach[i])}</span>` : `<span class="zero">0</span>`;
     tr.innerHTML = `<td>${NAMES[i]}</td><td>${fmt(have[i])}</td><td>${fmt(need[i])}</td><td>${last}</td>`;
     body.appendChild(tr);
   }
-  $("planFoot").innerHTML = `<tr><td>Total</td><td>${fmt(haveTotal)}</td><td>${fmt(needSum)}</td><td>${useNpc ? fmt(target.reduce((a, b) => a + b, 0)) : fmt(shortSum)}</td></tr>`;
+  $("planFoot").innerHTML = `<tr><td>Total</td><td>${fmt(have.reduce((a, b) => a + b, 0))}</td><td>${fmt(needAll)}</td><td>${useNpc ? fmt(target.reduce((a, b) => a + b, 0)) : fmt(shortSum)}</td></tr>`;
 
   /* notes */
   const notes = [];
   if (bSum > 0) notes.push(`Buildings: ${fmt(bSum)}.`);
   if (ccSum > 0) notes.push(`Celebrations: ${fmt(ccSum)}.`);
   if (troopSum > 0) notes.push(`Troops: ${fmt(troopSum)}.`);
-  if (v.mode === "max" && capLimited >= 0) notes.push(`<span class="warn">Your ${capLimited === 3 ? "granary" : "warehouse"} caps the troop count: more ${NAMES[capLimited].toLowerCase()} wouldn't fit.</span>`);
+  if (capLimited >= 0) notes.push(`<span class="warn">Your ${capLimited === 3 ? "granary" : "warehouse"} caps the troop count: more ${NAMES[capLimited].toLowerCase()} wouldn't fit.</span>`);
   const over = RES.filter(i => caps[i] !== Infinity && need[i] > caps[i]);
   if (over.length) notes.push(`<span class="warn">${over.map(i => NAMES[i]).join(", ")} needed is more than your storage holds at once, so you'll have to do this in more than one round.</span>`);
   const peakOver: number[] = RES.filter(i => caps[i] !== Infinity && Math.max(bPeak[i], cc.peak[i]) > caps[i]);
@@ -331,21 +360,34 @@ function calc() {
   $("planNote").innerHTML = notes.join(" ");
 
   /* sending */
-  const cap = num("merchCap"), mspd = num("merchSpeed"), dist = parseFloat($("dist").value) || 0;
+  const src = v.sendFrom ? store.villages[v.sendFrom] : undefined;
+  const here = coordsOf($("x").value, $("y").value), there = src && coordsOf(src.fields.x, src.fields.y);
+  const auto = here && there ? mapDistance(here, there) : null;
+  const distEl = $("dist");
+  distEl.readOnly = auto !== null;
+  if (auto !== null) distEl.value = String(Math.round(auto * 10) / 10);
+  const cap = num("merchCap"), mspd = num("merchSpeed"), dist = auto ?? (parseFloat(distEl.value) || 0);
   const merchants = (amt: number) => merchantsNeeded(amt, cap);
   const travel = travelSeconds(dist, mspd, speed);
-  const travelTxt = travel ? ` Travel time one way: <strong>${fmtTime(travel)}</strong>.` : " Add a distance to see travel time.";
+  const travelTxt = travel ? `Travel time one way: <strong>${fmtTime(travel)}</strong>.`
+    : src && auto === null ? "Add map coordinates for both villages to get the distance." : "Add a distance to see travel time.";
   let send;
-  if (needSum === 0) send = `<p class="zero">Nothing to send yet.</p>`;
-  else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything.</p>`;
+  if (needAll === 0) send = `<p class="zero">Nothing to send yet.</p>`;
+  else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything${heroSum > 0 ? " once you take from the hero" : ""}.</p>`;
   else {
     const exact = shortEach.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
     send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(shortSum)} total, ${fmt(merchants(shortSum))} merchant${merchants(shortSum) === 1 ? "" : "s"}.</p>`;
     if (!coveredNpc) {
       const gap = needSum - haveTotal;
-      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts.</p>`;
+      const except = tradable.every(Boolean) ? "" : " except " + joinAnd(RES.filter(i => !tradable[i]).map(i => NAMES[i].toLowerCase()));
+      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource${except}, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts.</p>`;
     } else send += `<p><strong>Or skip sending</strong> and use the NPC trade above.</p>`;
-    send += `<p class="hint" style="margin:0">${travelTxt.trim()}</p>`;
+    if (src) {
+      const srcHave = res4(i => toNum(src.fields["have" + i]));
+      const low = RES.filter(i => shortEach[i] > srcHave[i]);
+      if (low.length) send += `<p class="warn">${esc(src.name)} only has ${joinAnd(low.map(i => `${fmt(srcHave[i])} ${NAMES[i].toLowerCase()}`))} saved here.</p>`;
+    }
+    send += `<p class="hint" style="margin:0">${travelTxt}</p>`;
   }
   $("sendBox").innerHTML = send;
 
@@ -387,7 +429,7 @@ $("deleteVillage").addEventListener("click", () => {
 
 tribeSel.addEventListener("change", () => {
   v.tribe = tribeSel.value;
-  v.troops = [{ unit: 0, ratio: "1", count: v.troops[0]?.count ?? "100" }];
+  v.troops = v.troops.length ? [{ ...v.troops[0], unit: 0 }] : [];
   loadMerchant(); fillStatUnits(0); renderTroops(); calc();
 });
 $("speed").addEventListener("change", calc);
@@ -397,7 +439,8 @@ CELEBRATIONS.forEach((_, i) => $("celeb" + i).addEventListener("input", e => { v
 ["cost0", "cost1", "cost2", "cost3", "upkeep", "baseTime"].forEach(f => $(f).addEventListener("input", () => { saveStats(); calc(); }));
 statSel.addEventListener("change", showStats);
 $("resetUnit").addEventListener("click", () => { delete store.overrides[v.tribe]?.[statSel.value]; showStats(); calc(); });
-document.querySelectorAll<HTMLButtonElement>(".seg button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode!)));
+RES.forEach(i => $("hero" + i).addEventListener("change", e => { v.hero![i] = (e.target as HTMLInputElement).checked; calc(); }));
+$("sendFrom").addEventListener("change", e => { v.sendFrom = (e.target as HTMLSelectElement).value; calc(); });
 
 $("addBuild").addEventListener("click", () => {
   v.builds.push({ b: 0, from: 0, to: 1, qty: 1 });
@@ -419,7 +462,7 @@ $("builds").addEventListener("click", e => {
 
 $("addTroop").addEventListener("click", () => {
   const last = v.troops[v.troops.length - 1];
-  v.troops.push({ unit: last ? last.unit : 0, ratio: "1", count: last ? last.count : "100" });
+  v.troops.push(last ? { ...last, ratio: "1" } : newTroop(0));
   renderTroops(); calc();
   const sel = $("tunit" + (v.troops.length - 1)); if (sel) sel.focus();
 });
@@ -428,12 +471,14 @@ $("troops").addEventListener("input", e => {
   const row = t.closest<HTMLElement>(".brow"); if (!row) return;
   const r = v.troops[+row.dataset.i!], f = t.dataset.f as keyof TroopRow;
   if (f === "unit") { r.unit = +t.value; statSel.value = t.value; showStats(); renderTrainFields(); }
-  else if (f === "ratio" || f === "count") r[f] = t.value;
+  else if (f === "mode") { r.mode = t.value as TroopMode; renderTroops(); }
+  else if (f === "ratio" || f === "count" || f === "hours" || f === "mins") r[f] = t.value;
   calc();
 });
 $("troops").addEventListener("click", e => {
   const r = (e.target as HTMLElement).dataset.remove; if (r == null) return;
   v.troops.splice(+r, 1); renderTroops(); calc();
+  if (!v.troops.length) $("addTroop").focus();
 });
 $("trainFields").addEventListener("input", e => {
   const t = e.target as HTMLInputElement;

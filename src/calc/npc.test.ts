@@ -56,3 +56,27 @@ describe("npcTargets", () => {
     expect(npcTargets([100, 200, 300, 400], 1000, NO_CAPS, 3)).toEqual([100, 200, 300, 400]);
   });
 });
+
+describe("hero resources", () => {
+  const HERO_CROP = [true, true, true, false];
+
+  it("leaves hero resources out of the trade and says what to take", () => {
+    const p = planNeeds([500, 0, 0, 0], [100, 100, 100, 900], HERO_CROP);
+    expect(p).toMatchObject({ haveTotal: 500, needSum: 300, needAll: 1200, shortEach: [0, 100, 100, 0], heroTake: [0, 0, 0, 900], heroSum: 900, coveredNpc: true, useNpc: true });
+  });
+
+  it("is covered directly when only hero resources are missing", () => {
+    const p = planNeeds([100, 100, 100, 0], [100, 100, 100, 50], HERO_CROP);
+    expect(p).toMatchObject({ coveredDirect: true, useNpc: false, heroTake: [0, 0, 0, 50] });
+  });
+
+  it("keeps hero resources at what the village has and never puts leftover there", () => {
+    expect(npcTargets([100, 100, 100, 900], 500, NO_CAPS, 3, HERO_CROP, [500, 0, 0, 7])).toEqual([300, 100, 100, 7]);
+  });
+
+  it("matches the default when nothing comes from the hero", () => {
+    const all = [true, true, true, true];
+    expect(planNeeds([500, 0, 0, 0], [100, 100, 100, 100], all)).toEqual(planNeeds([500, 0, 0, 0], [100, 100, 100, 100]));
+    expect(npcTargets([100, 100, 100, 100], 500, NO_CAPS, 0, all, [500, 0, 0, 0])).toEqual(npcTargets([100, 100, 100, 100], 500, NO_CAPS, 0));
+  });
+});

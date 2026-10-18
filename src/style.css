@@ -48,12 +48,6 @@ button { font: inherit; font-size: 0.95rem; background: transparent; color: var(
 button.primary { border-color: var(--ink); font-weight: 700; }
 button:disabled { opacity: 0.45; cursor: default; }
 
-/* Mode switch */
-.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg button { flex: 1; border: 0; border-radius: 0; padding: 8px 4px; font-size: 0.9rem; color: var(--muted); }
-.seg button + button { border-left: 1px solid var(--line); }
-.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 700; }
-
 /* Building rows */
 .brow { border-top: 1px solid var(--line); padding: 12px 0 4px; }
 .brow:first-of-type { border-top: 0; padding-top: 0; }
@@ -111,3 +105,13 @@ textarea { display: block; resize: vertical; font-size: 0.9rem; }
 .imp-row:first-child { border-top: 0; }
 .imp-row .cost-line { margin-top: 2px; font-size: 0.85rem; }
 .imp-row .cost-line b { font-weight: 700; }
+
+/* Hero resources */
+.hero-wrap { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 12px; font-size: 0.95rem; }
+.hero-wrap > span { flex-basis: 100%; color: var(--muted); font-size: 0.85rem; }
+label.check { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--c); cursor: pointer; }
+input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--c); }
+.trow-time { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; grid-column: span 2; }
+.trow-nums { grid-template-columns: 9.2rem minmax(0, 1fr) minmax(0, 1fr); }
+input[readonly] { background: transparent; border-style: dashed; color: var(--muted); }
+.trow-nums .span2 { grid-column: span 2; }

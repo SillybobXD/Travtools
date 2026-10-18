@@ -36,6 +36,10 @@
       <div><label for="wh">Warehouse capacity</label><input id="wh" inputmode="numeric" autocomplete="off"></div>
       <div><label for="gr">Granary capacity</label><input id="gr" inputmode="numeric" autocomplete="off"></div>
     </div>
+    <div class="grid2 gap">
+      <div><label for="x">Map X</label><input id="x" autocomplete="off" placeholder="e.g. 12"></div>
+      <div><label for="y">Map Y</label><input id="y" autocomplete="off" placeholder="e.g. -34"></div>
+    </div>
   </section>
 
   <details id="importBox">
@@ -65,23 +69,11 @@
 
   <section>
     <h2>Troops</h2>
-    <div class="seg" role="group" aria-label="How to plan troops">
-      <button type="button" data-mode="none">None</button>
-      <button type="button" data-mode="max">As many as possible</button>
-      <button type="button" data-mode="count">Set number</button>
-      <button type="button" data-mode="time">Fill a time</button>
-    </div>
-    <div id="troopFields">
-      <div id="troops" class="gap"></div>
-      <button type="button" id="addTroop" class="gap">Add troop type</button>
-      <p class="hint" id="ratioHint">With several troop types, “Ratio” sets the mix, for example 2 and 1 for twice as many of the first.</p>
-      <div id="timeWrap"><div class="grid2 gap">
-        <div><label for="hours">Hours</label><input id="hours" inputmode="numeric" autocomplete="off"></div>
-        <div><label for="mins">Minutes</label><input id="mins" inputmode="numeric" autocomplete="off"></div>
-      </div></div>
-      <div id="trainFields"></div>
-      <div class="troop-out" id="troopOut"></div>
-    </div>
+    <div id="troops"></div>
+    <button type="button" id="addTroop" class="gap">Add troop type</button>
+    <p class="hint" id="ratioHint">Each troop type has its own way to plan: as many as possible, a set number, or enough to fill a training time. Set numbers and timed troops are paid first; “Max possible” types share the rest by their ratio, for example 2 and 1 for twice as many of the first.</p>
+    <div id="trainFields"></div>
+    <div class="troop-out" id="troopOut"></div>
   </section>
 
   <section class="plan-card" aria-live="polite">
@@ -94,6 +86,13 @@
         <tfoot id="planFoot"></tfoot>
       </table>
     </div>
+    <div class="hero-wrap" role="group" aria-labelledby="heroLabel">
+      <span id="heroLabel">Take from the hero instead of trading:</span>
+      <label class="check" style="--c: var(--wood)"><input type="checkbox" id="hero0"> Wood</label>
+      <label class="check" style="--c: var(--clay)"><input type="checkbox" id="hero1"> Clay</label>
+      <label class="check" style="--c: var(--iron)"><input type="checkbox" id="hero2"> Iron</label>
+      <label class="check" style="--c: var(--crop)"><input type="checkbox" id="hero3"> Crop</label>
+    </div>
     <div class="inline" id="prefWrap">
       <label for="pref">Put NPC leftover into</label>
       <select id="pref"><option value="3">Crop</option><option value="0">Wood</option><option value="1">Clay</option><option value="2">Iron</option></select>
@@ -101,7 +100,8 @@
     <p class="hint" id="planNote"></p>
 
     <h3>Sending from another village</h3>
-    <div class="grid3">
+    <div><label for="sendFrom">Send from</label><select id="sendFrom"></select></div>
+    <div class="grid3 gap">
       <div><label for="merchCap">Each merchant carries</label><input id="merchCap" inputmode="numeric" autocomplete="off"></div>
       <div><label for="merchSpeed">Merchant speed (fields/h)</label><input id="merchSpeed" inputmode="numeric" autocomplete="off"></div>
       <div><label for="dist">Distance (fields)</label><input id="dist" inputmode="decimal" autocomplete="off"></div>

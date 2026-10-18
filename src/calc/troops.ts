@@ -56,18 +56,24 @@ export interface MixResult {
 /** Units per row when the limit is `num / den` batches: floor(weight * num / den), never negative. */
 const countsAt = (weights: number[], num: number, den: number) => weights.map(w => Math.max(0, Math.floor(w * num / den)));
 const sumOf = (a: number[]) => a.reduce((s, v) => s + v, 0);
+const ALL = [true, true, true, true];
 
 /**
  * Largest troop mix that keeps the rows' ratio, from total resources after
- * building costs, limited per resource by storage like `maxTroops`.
- * With a single row of weight 1 it gives exactly `maxTroops`.
+ * other costs, limited per resource by storage like `maxTroops`.
+ * `tradable` marks the resources the NPC trade works with; the others come from
+ * the hero, so only storage limits them, and `haveTotal` counts only tradable ones.
+ * With a single row of weight 1 and everything tradable it gives exactly `maxTroops`.
  */
-export function maxTroopMix(rows: MixRow[], haveTotal: number, otherCost: Res4, caps: Res4): MixResult {
-  const weights = rows.map(r => r.weight);
-  const perBatch = sumOf(rows.map(r => r.weight * sumOf(r.cost)));
-  if (perBatch <= 0) return { counts: rows.map(() => 0), capLimited: -1 };
-  let counts = countsAt(weights, haveTotal - sumOf(otherCost), perBatch);
-  let n = sumOf(counts), capLimited = -1;
+export function maxTroopMix(rows: MixRow[], haveTotal: number, otherCost: Res4, caps: Res4, tradable: boolean[] = ALL): MixResult {
+  const weights = rows.map(r => r.weight), zero = rows.map(() => 0);
+  if (sumOf(rows.map(r => r.weight * sumOf(r.cost))) <= 0) return { counts: zero, capLimited: -1 };
+  const perBatch = sumOf(rows.map(r => r.weight * sumOf(r.cost.filter((_, i) => tradable[i]))));
+  let counts: number[] | null = null, n = Infinity, capLimited = -1;
+  if (perBatch > 0) {
+    counts = countsAt(weights, haveTotal - sumOf(otherCost.filter((_, i) => tradable[i])), perBatch);
+    n = sumOf(counts);
+  }
   for (let i = 0; i < 4; i++) {
     const perRes = sumOf(rows.map(r => r.weight * r.cost[i]));
     if (perRes > 0 && caps[i] !== Infinity && otherCost[i] <= caps[i]) {
@@ -75,29 +81,46 @@ export function maxTroopMix(rows: MixRow[], haveTotal: number, otherCost: Res4, 
       if (m < n) { n = m; counts = c; capLimited = i; }
     }
   }
-  return { counts, capLimited };
+  return { counts: counts ?? zero, capLimited };
+}
+
+export type TroopMode = "max" | "count" | "time";
+
+export interface PlanRow {
+  mode: TroopMode;
+  cost: Res4;
+  /** Share among the "max" rows. */
+  weight: number;
+  /** Units for "count" rows. */
+  count: number;
+  /** Training time to fill for "time" rows. */
+  seconds: number;
+  /** Seconds per unit; 0 = unknown. */
+  perUnit: number;
+}
+
+/**
+ * Units per row when each row has its own mode. "count" and "time" rows are fixed
+ * and paid first, together with `otherCost`; the "max" rows share what is left by weight.
+ */
+export function planTroops(rows: PlanRow[], haveTotal: number, otherCost: Res4, caps: Res4, tradable: boolean[] = ALL): MixResult {
+  const counts = rows.map(r => r.mode === "count" ? r.count : r.mode === "time" ? troopsForTime(r.seconds, r.perUnit) : 0);
+  const fixed = [0, 1, 2, 3].map(i => otherCost[i] + sumOf(rows.map((r, k) => r.cost[i] * counts[k]))) as Res4;
+  const maxIdx = rows.flatMap((r, k) => r.mode === "max" ? [k] : []);
+  if (!maxIdx.length) return { counts, capLimited: -1 };
+  const mix = maxTroopMix(maxIdx.map(k => ({ cost: rows[k].cost, weight: rows[k].weight })), haveTotal, fixed, caps, tradable);
+  maxIdx.forEach((k, j) => counts[k] = mix.counts[j]);
+  return { counts, capLimited: mix.capLimited };
 }
 
 export interface TimedRow {
   /** Seconds per unit; 0 = unknown. */
   perUnit: number;
-  weight: number;
   /** Rows with the same group share one training queue (e.g. the barracks). */
   group: string;
 }
 
-/**
- * Units per row that finish within `seconds`. Each group trains in parallel;
- * rows in the same group split its time by weight.
- * With a single row of weight 1 it gives exactly `troopsForTime`.
- */
-export function troopMixForTime(rows: TimedRow[], seconds: number): number[] {
-  const perGroup = new Map<string, number>();
-  for (const r of rows) if (r.perUnit > 0) perGroup.set(r.group, (perGroup.get(r.group) ?? 0) + r.weight * r.perUnit);
-  return rows.map(r => r.perUnit > 0 ? Math.max(0, Math.floor(r.weight * seconds / perGroup.get(r.group)!)) : 0);
-}
-
-/** Time until the slowest queue finishes, given units per row. */
+/** Time until the slowest queue finishes, given units per row. Each group trains in parallel. */
 export function mixDuration(rows: TimedRow[], counts: number[]): number {
   const perGroup = new Map<string, number>();
   rows.forEach((r, i) => perGroup.set(r.group, (perGroup.get(r.group) ?? 0) + r.perUnit * counts[i]));

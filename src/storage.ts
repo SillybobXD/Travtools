@@ -1,4 +1,5 @@
 import type { BuildRow } from "./calc/buildings";
+import type { TroopMode } from "./calc/troops";
 import type { Res4, TrainingBuilding } from "./types";
 
 const KEY = "village-planner-v2";
@@ -8,8 +9,12 @@ const LEGACY_KEYS = ["village-planner", "npc-planner"];
 /** One troop type in the plan. Inputs are kept as typed. */
 export interface TroopRow {
   unit: number;
+  /** Older saves have no mode; the village-wide `mode` applies (see `normalizeTroops`). */
+  mode?: TroopMode;
   ratio: string;
   count: string;
+  hours?: string;
+  mins?: string;
 }
 
 /** Everything the planner shows for one village. Inputs are kept as typed. */
@@ -20,13 +25,18 @@ export interface VillageState {
   tribe: string;
   speed: string;
   pref: string;
-  mode: string;
+  /** Village-wide troop mode from before each row had its own. Only read when migrating. */
+  mode?: string;
   builds: BuildRow[];
   troops: TroopRow[];
   /** Level and time bonus per training building. */
   train: Partial<Record<TrainingBuilding, { lvl: string; bonus: string }>>;
   /** Number of small and great celebrations. */
   celebs: string[];
+  /** Resources taken from the hero instead of the NPC trade, per resource. */
+  hero?: boolean[];
+  /** Saved village the resources are sent from, if any. */
+  sendFrom?: string;
   fields: Record<string, string>;
 }
 
@@ -46,11 +56,28 @@ export interface Store {
 
 export function newVillage(name: string, tribe: string, speed: string): VillageState {
   return {
-    name, tribe, speed, pref: "3", mode: "max", builds: [],
-    troops: [{ unit: 0, ratio: "1", count: "100" }],
-    train: {}, celebs: ["", ""],
-    fields: { hours: "8", mins: "0" },
+    name, tribe, speed, pref: "3", builds: [],
+    troops: [newTroop(0)],
+    train: {}, celebs: ["", ""], hero: [false, false, false, false],
+    fields: {},
   };
+}
+
+export const newTroop = (unit: number, mode: TroopMode = "max"): TroopRow => ({ unit, mode, ratio: "1", count: "100", hours: "8", mins: "0" });
+
+/**
+ * Gives every troop row its own mode, from the village-wide mode older saves used.
+ * "None" becomes no rows. Hours and minutes come from the old shared fields.
+ */
+export function normalizeTroops(v: VillageState): void {
+  if (v.troops.some(r => !r.mode)) {
+    const old = v.mode || "max";
+    v.troops = old === "none" ? [] : v.troops.map(r => ({
+      ...r, mode: r.mode ?? (old as TroopMode),
+      hours: r.hours ?? v.fields.hours ?? "8", mins: r.mins ?? v.fields.mins ?? "0",
+    }));
+  }
+  delete v.mode;
 }
 
 export const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -60,14 +87,15 @@ export function migrateLegacy(s: Record<string, unknown>, building: (tribe: stri
   const str = (v: unknown) => v == null ? "" : String(v);
   const v = newVillage("My village", str(s.tribe), str(s.speed) || "1");
   if (s.pref) v.pref = str(s.pref);
-  if (s.mode) v.mode = str(s.mode);
   if (Array.isArray(s.builds)) v.builds = s.builds as BuildRow[];
   const unit = Number(s.unit) || 0;
   v.troops = [{ unit, ratio: "1", count: str(s.count) || "100" }];
+  v.mode = str(s.mode) || "max";
   const b = building(v.tribe, unit);
   if (b) v.train[b] = { lvl: str(s.lvl) || "1", bonus: str(s.bonus) };
   for (const f of ["have0", "have1", "have2", "have3", "wh", "gr", "hours", "mins", "dist", "merchCap", "merchSpeed"])
     if (s[f] != null && s[f] !== "") v.fields[f] = str(s[f]);
+  normalizeTroops(v);
   return v;
 }
 
