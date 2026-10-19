@@ -55,6 +55,8 @@ interface CommonInput {
   woundedRecoverable?: boolean;
   /** How many alternatives to return besides the best; default 2. */
   alternatives?: number;
+  /** Drop unit types worth under TRIM_SHARE of each result's army (see `trimOption`). Default false. */
+  trim?: boolean;
   attackerPop?: number;
   defenderPop?: number;
 }
@@ -98,7 +100,12 @@ export interface ArmyOption {
   /** Attack: resources carried home (survivors' capacity, limited by what's above the cranny when known). */
   loot: number | null;
   score: number;
+  /** Set when small leftovers were trimmed: units removed by index, and own loss value after minus before. */
+  trimmed?: { counts: number[]; lossDelta: number };
 }
+
+/** Trimming drops unit types worth less than this share of the army's resource value. */
+export const TRIM_SHARE = 0.02;
 
 export interface OptimizeResult {
   best: ArmyOption | null;
@@ -151,64 +158,94 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   let evaluated = 0;
   const seen = new Map<string, ArmyOption>();
 
-  /** Simulates the battle for these counts per village of the pool. */
+  /** Simulates the battle for these counts per village of the pool, once per distinct army. */
   const evaluate = (pool: Pool, per: number[][]): ArmyOption => {
     const key = pool.villages.map(v => v.name).join("|") + ":" + per.map(c => c.join(",")).join(";");
-    const known = seen.get(key);
-    if (known) return known;
-    evaluated++;
-    const sent = pool.villages
-      .map((v, k) => ({ village: v.name, army: { tribe: input.tribe, counts: per[k], ...(v.smithy ? { smithy: v.smithy } : {}) } as Army }))
-      .filter(s => s.army.counts.some(n => n > 0));
-    const counts = zeros();
-    for (const c of per) c.forEach((n, i) => (counts[i] += n));
-    const cost = armyValue(input.tribe, counts);
-    let result: BattleResult, win: boolean, ownLost: number, ownWounded: number, enemyLost: number, loot: number | null = null;
-    if (input.side === "attack") {
-      const attacker: Army = sent[0]?.army ?? { tribe: input.tribe, counts: zeros() };
-      result = battle({ attacker, defenders: input.defenders, village: input.village, mode: input.mode, attackerPop: input.attackerPop, defenderPop: input.defenderPop });
-      win = result.winner === "attacker";
-      ownLost = armyValue(input.tribe, result.attackerLosses);
-      ownWounded = armyValue(input.tribe, result.attackerWounded);
-      enemyLost = input.defenders.reduce((s, d, k) => s + armyValue(d.tribe, result.defenderLosses[k]), 0);
-      const carry = attacker.counts.reduce((s, n, i) => s + (n - result.attackerLosses[i]) * (units[i]?.carry ?? 0), 0);
-      loot = input.loot ? Math.min(carry, lootable(input.loot.res, input.loot.crannyCapacity)) : carry;
-    } else {
-      const defenders = [...input.home, ...sent.map(s => s.army)];
-      result = battle({ attacker: input.attacker, defenders, village: input.village, mode: input.mode, attackerPop: input.attackerPop, defenderPop: input.defenderPop });
-      win = result.winner === "defender";
-      ownLost = defenders.reduce((s, d, k) => s + armyValue(d.tribe, result.defenderLosses[k]), 0);
-      ownWounded = defenders.reduce((s, d, k) => s + armyValue(d.tribe, result.defenderWounded[k]), 0);
-      enemyLost = armyValue(input.attacker.tribe, result.attackerLosses);
-    }
-    const ownLossValue = ownLost - (input.woundedRecoverable ? ownWounded : 0);
-    const tiny = 1e-6;
-    let score: number;
-    switch (input.objective) {
-      case "fewestLosses": score = win ? -ownLossValue - tiny * cost : -Infinity; break;
-      case "smallestWin": score = win ? -cost - tiny * ownLossValue : -Infinity; break;
-      case "mostEnemyLosses": score = enemyLost - tiny * ownLossValue; break;
-      case "mostLoot": score = (loot ?? 0) - ownLossValue - tiny * cost; break;
-    }
-    // An attack has to send something; a defence may need no reinforcements at all.
-    if (input.side === "attack" && !sent.length) score = -Infinity;
-    const option: ArmyOption = { sent, counts, cost, result, win, ownLost, ownWounded, ownLossValue, enemyLost, loot, score };
-    seen.set(key, option);
+    let option = seen.get(key);
+    if (!option) { evaluated++; option = simulateOption(input, pool.villages, per); seen.set(key, option); }
     return option;
   };
 
   for (const pool of pools) searchPool(pool, input, allowed, value, evaluate);
 
   const all = [...seen.values()].filter(o => o.score > -Infinity).sort((a, b) => b.score - a.score);
-  const best = all[0] ?? null;
-  const alternatives: ArmyOption[] = [];
+  const picked: ArmyOption[] = [];
   const mix = (o: ArmyOption) => mainMix(o, input.tribe);
-  for (const o of all.slice(1)) {
-    if (alternatives.length >= (input.alternatives ?? 2)) break;
+  const want = 1 + (input.alternatives ?? 2);
+  for (const found of all) {
+    if (picked.length >= want) break;
+    const o = input.trim ? trimOption(input, found) : found;
+    if (input.trim) evaluated += o === found ? 0 : 1;
     // Different from those already picked: another main mix or village, or a cost at least 10% apart.
-    if ([best!, ...alternatives].every(p => mix(p) !== mix(o) || Math.abs(p.cost - o.cost) > 0.1 * Math.max(p.cost, o.cost))) alternatives.push(o);
+    if (picked.every(p => mix(p) !== mix(o) || Math.abs(p.cost - o.cost) > 0.1 * Math.max(p.cost, o.cost))) picked.push(o);
   }
-  return { best, alternatives, evaluated };
+  return { best: picked[0] ?? null, alternatives: picked.slice(1), evaluated };
+}
+
+/** Simulates one army (counts per sending village) against the input's enemy and scores it for the objective. */
+export function simulateOption(input: OptimizeInput, villages: { name: string | null; smithy?: number[] }[], per: number[][]): ArmyOption {
+  const units = UNITS[input.tribe] ?? [];
+  const sent = villages
+    .map((v, k) => ({ village: v.name, army: { tribe: input.tribe, counts: per[k], ...(v.smithy ? { smithy: v.smithy } : {}) } as Army }))
+    .filter(s => s.army.counts.some(n => n > 0));
+  const counts = zeros();
+  for (const c of per) c.forEach((n, i) => (counts[i] += n));
+  const cost = armyValue(input.tribe, counts);
+  let result: BattleResult, win: boolean, ownLost: number, ownWounded: number, enemyLost: number, loot: number | null = null;
+  if (input.side === "attack") {
+    const attacker: Army = sent[0]?.army ?? { tribe: input.tribe, counts: zeros() };
+    result = battle({ attacker, defenders: input.defenders, village: input.village, mode: input.mode, attackerPop: input.attackerPop, defenderPop: input.defenderPop });
+    win = result.winner === "attacker";
+    ownLost = armyValue(input.tribe, result.attackerLosses);
+    ownWounded = armyValue(input.tribe, result.attackerWounded);
+    enemyLost = input.defenders.reduce((s, d, k) => s + armyValue(d.tribe, result.defenderLosses[k]), 0);
+    const carry = attacker.counts.reduce((s, n, i) => s + (n - result.attackerLosses[i]) * (units[i]?.carry ?? 0), 0);
+    loot = input.loot ? Math.min(carry, lootable(input.loot.res, input.loot.crannyCapacity)) : carry;
+  } else {
+    const defenders = [...input.home, ...sent.map(s => s.army)];
+    result = battle({ attacker: input.attacker, defenders, village: input.village, mode: input.mode, attackerPop: input.attackerPop, defenderPop: input.defenderPop });
+    win = result.winner === "defender";
+    ownLost = defenders.reduce((s, d, k) => s + armyValue(d.tribe, result.defenderLosses[k]), 0);
+    ownWounded = defenders.reduce((s, d, k) => s + armyValue(d.tribe, result.defenderWounded[k]), 0);
+    enemyLost = armyValue(input.attacker.tribe, result.attackerLosses);
+  }
+  const ownLossValue = ownLost - (input.woundedRecoverable ? ownWounded : 0);
+  const tiny = 1e-6;
+  let score: number;
+  switch (input.objective) {
+    case "fewestLosses": score = win ? -ownLossValue - tiny * cost : -Infinity; break;
+    case "smallestWin": score = win ? -cost - tiny * ownLossValue : -Infinity; break;
+    case "mostEnemyLosses": score = enemyLost - tiny * ownLossValue; break;
+    case "mostLoot": score = (loot ?? 0) - ownLossValue - tiny * cost; break;
+  }
+  // An attack has to send something; a defence may need no reinforcements at all.
+  if (input.side === "attack" && !sent.length) score = -Infinity;
+  return { sent, counts, cost, result, win, ownLost, ownWounded, ownLossValue, enemyLost, loot, score };
+}
+
+/**
+ * Drops small leftovers from an army: unit types worth under TRIM_SHARE of its resource value,
+ * never the most valuable type. The army is simulated again; if it won before and the trimmed one
+ * doesn't, removed types are put back, most valuable first, until it wins again.
+ * Returns the option unchanged when there is nothing to trim.
+ */
+export function trimOption(input: OptimizeInput, o: ArmyOption): ArmyOption {
+  if (!o.sent.length || !(o.cost > 0)) return o;
+  const worth = o.counts.map((n, i) => n * unitValue(input.tribe, i));
+  const top = worth.indexOf(Math.max(...worth));
+  let drop = worth.flatMap((w, i) => (o.counts[i] > 0 && i !== top && w < TRIM_SHARE * o.cost ? [i] : []));
+  if (!drop.length) return o;
+  const villages = o.sent.map(s => ({ name: s.village, smithy: s.army.smithy }));
+  const run = (d: number[]) => simulateOption(input, villages, o.sent.map(s => s.army.counts.map((n, i) => (d.includes(i) ? 0 : n))));
+  let t = run(drop);
+  // Put back what the win needs, the most valuable removed type first.
+  for (const i of [...drop].sort((a, b) => worth[b] - worth[a])) {
+    if (!o.win || t.win) break;
+    drop = drop.filter(j => j !== i);
+    t = run(drop);
+  }
+  if (!drop.length) return o;
+  return { ...t, trimmed: { counts: o.counts.map((n, i) => (drop.includes(i) ? n : 0)), lossDelta: t.ownLossValue - o.ownLossValue } };
 }
 
 /** The unit types making up at least 10% of an army's value, and where it comes from: what tells two options apart. */

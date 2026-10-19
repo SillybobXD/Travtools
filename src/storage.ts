@@ -56,10 +56,14 @@ export interface VillageCombat {
   smithy: string[];
 }
 
-/** One army on the combat page, counts as typed. */
+/** One army on the combat page, counts and smithy levels as typed. */
 export interface CombatArmy {
   tribe: string;
   counts: string[];
+  /** Smithy levels per unit index; blank is 0. */
+  smithy?: string[];
+  /** What a pasted report said about these smithy levels. */
+  note?: string;
 }
 
 /** The combat page's inputs, kept as typed. Shared by all villages; absent in older saves. */
@@ -89,6 +93,8 @@ export interface CombatState {
   woundedRecoverable: boolean;
   ownPop: string;
   enemyPop: string;
+  /** Drop small leftovers from the optimizer's armies. */
+  trim: boolean;
 }
 
 export interface UnitOverride {
@@ -110,14 +116,14 @@ export interface Store {
 const blank10 = () => Array.from({ length: 10 }, () => "");
 
 export function newCombatArmy(tribe: string): CombatArmy {
-  return { tribe, counts: blank10() };
+  return { tribe, counts: blank10(), smithy: blank10() };
 }
 
 export function newCombatState(tribe: string, village: string): CombatState {
   return {
     side: "attack", mode: "normal", enemy: [newCombatArmy(tribe)], wallTribe: tribe, wall: "", x: "", y: "",
     lootRes: ["", "", "", ""], cranny: "", village, home: blank10(), source: "optimal", cap: "100000",
-    allowed: {}, objective: "fewestLosses", woundedRecoverable: false, ownPop: "", enemyPop: "",
+    allowed: {}, objective: "fewestLosses", woundedRecoverable: false, ownPop: "", enemyPop: "", trim: true,
   };
 }
 
@@ -127,7 +133,7 @@ export function combatOf(store: Store): CombatState {
   const def = newCombatState(first?.tribe ?? "Teutons", store.current);
   const c: CombatState = { ...def, ...(store.combat ?? {}) };
   if (!c.enemy?.length) c.enemy = def.enemy;
-  c.enemy = c.enemy.map(a => ({ tribe: a.tribe, counts: pad10(a.counts) }));
+  c.enemy = c.enemy.map(a => ({ tribe: a.tribe, counts: pad10(a.counts), smithy: pad10(a.smithy), ...(a.note ? { note: a.note } : {}) }));
   c.home = pad10(c.home);
   c.lootRes = [0, 1, 2, 3].map(i => c.lootRes?.[i] ?? "");
   if (!store.villages[c.village]) c.village = store.current;

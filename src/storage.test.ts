@@ -46,7 +46,8 @@ describe("combat state", () => {
     const s = store();
     const c = combatOf(s);
     expect(c).toMatchObject({ side: "attack", mode: "normal", source: "optimal", objective: "fewestLosses", village: "a", wallTribe: "Gauls" });
-    expect(c.enemy).toEqual([{ tribe: "Gauls", counts: Array(10).fill("") }]);
+    expect(c.enemy).toEqual([{ tribe: "Gauls", counts: Array(10).fill(""), smithy: Array(10).fill("") }]);
+    expect(c.trim).toBe(true);
     expect(s.combat).toBe(c);
   });
 
@@ -57,6 +58,7 @@ describe("combat state", () => {
     expect(c.side).toBe("defend");
     expect(c.village).toBe("b");
     expect(c.enemy[0].counts).toEqual(["5", "", "", "", "", "", "", "", "", ""]);
+    expect(c.enemy[0].smithy).toHaveLength(10);
     expect(c.home).toHaveLength(10);
     expect(c.cap).toBe("100000");
   });

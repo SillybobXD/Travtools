@@ -5,7 +5,7 @@ import { armyValue, combatUnits, optimize, type ArmyOption, type Objective, type
 import { mapDistance } from "./calc/merchants";
 import { armyTravelSeconds } from "./calc/travel";
 import { parseReport } from "./parse/report";
-import { fillFromReport } from "./parse/combatInput";
+import { fillFromReport, smithyFromReport } from "./parse/combatInput";
 import { parseTroops } from "./parse/troops";
 import { parseSmithy } from "./parse/smithy";
 import { combatOf, loadStore, newCombatArmy, newId, newVillage, saveStore, villageCombat, type CombatState, type Store, type VillageState } from "./storage";
@@ -100,6 +100,11 @@ function renderEnemy() {
         ${k > 0 ? `<button type="button" class="remove" data-eremove="${k}">Remove</button>` : ""}
       </div>
       <div class="unit-grid">${unitGrid(`e${k}u`, unitNames(a.tribe), a.counts, i => `data-ea="${k}" data-eu="${i}"`)}</div>
+      ${a.tribe === NATURE_TRIBE ? "" : `<details class="gap"${a.smithy?.some(s => toNum(s) > 0) ? " open" : ""}>
+        <summary>Smithy levels</summary>
+        <div class="unit-grid">${unitGrid(`e${k}s`, unitNames(a.tribe).slice(0, SMITHY_UNITS), a.smithy ?? [], i => `data-es="${k}" data-eu="${i}"`)}</div>
+      </details>`}
+      ${a.note ? `<p class="hint">${esc(a.note)}</p>` : ""}
     </div>`).join("");
 }
 
@@ -116,6 +121,7 @@ function renderOurs() {
   $("smithy").innerHTML = unitGrid("smith", names.slice(0, SMITHY_UNITS), vc.smithy, i => `data-smith="${i}"`);
   $<HTMLSelectElement>("objective").value = c.objective;
   $("wounded").checked = c.woundedRecoverable;
+  $("trim").checked = c.trim;
   $("ownPop").value = c.ownPop; $("enemyPop").value = c.enemyPop;
 }
 
@@ -124,7 +130,8 @@ function renderAll() { renderMode(); renderTarget(); renderOurs(); schedule(); }
 /* ---- optimizer ---- */
 const smithyLevels = () => nums(villageCombat(village()).smithy);
 const pop = (s: string) => (toNum(s) > 0 ? toNum(s) : undefined);
-const enemyArmies = (): Army[] => (c.side === "attack" ? c.enemy : c.enemy.slice(0, 1)).map(a => ({ tribe: a.tribe, counts: nums(a.counts) }));
+const enemyArmies = (): Army[] => (c.side === "attack" ? c.enemy : c.enemy.slice(0, 1))
+  .map(a => ({ tribe: a.tribe, counts: nums(a.counts), ...(a.tribe !== NATURE_TRIBE && a.smithy?.some(s => toNum(s) > 0) ? { smithy: nums(a.smithy) } : {}) }));
 const homeArmy = (): Army => ({ tribe: c.wallTribe, counts: nums(c.home) });
 const villageInput = () => ({ tribe: c.wallTribe, wall: toNum(c.wall) });
 const lootInput = () => (c.lootRes.some(s => s.trim()) ? { res: nums(c.lootRes) as [number, number, number, number], crannyCapacity: toNum(c.cranny) } : undefined);
@@ -134,7 +141,7 @@ function optimizerInput(): OptimizeInput {
   const source = c.source === "owned"
     ? { kind: "owned" as const, villages: [{ name: village().name, counts: nums(villageCombat(village()).troops), smithy }] }
     : { kind: "optimal" as const, cap: toNum(c.cap), smithy };
-  const common = { tribe, source, objective: c.objective, mode: c.mode, units: allowedUnits(), woundedRecoverable: c.woundedRecoverable };
+  const common = { tribe, source, objective: c.objective, mode: c.mode, units: allowedUnits(), woundedRecoverable: c.woundedRecoverable, trim: c.trim };
   return c.side === "attack"
     ? { ...common, side: "attack", defenders: enemyArmies(), village: villageInput(), loot: lootInput(), attackerPop: pop(c.ownPop), defenderPop: pop(c.enemyPop) }
     : { ...common, side: "defend", attacker: enemyArmies()[0], home: [homeArmy()], village: villageInput(), attackerPop: pop(c.enemyPop), defenderPop: pop(c.ownPop) };
@@ -176,6 +183,11 @@ const unitsLine = (tribe: string, counts: number[]) => {
 };
 const stat = (label: string, value: string, cls = "") => `<div class="stat"><span>${label}</span><strong${cls ? ` class="${cls}"` : ""}>${value}</strong></div>`;
 
+const trimmedText = (counts: number[]) => {
+  const names = unitNames(ourTribe());
+  return counts.flatMap((n, i) => (n > 0 ? [`${fmt(n)} ${esc(names[i])}`] : [])).join(", ");
+};
+
 function verdictOf(win: boolean) {
   return c.side === "attack" ? (win ? "Wins" : "Loses") : (win ? "Holds" : "Falls");
 }
@@ -196,6 +208,7 @@ function card(o: ArmyOption, k: number, best: boolean) {
       ${lootShown && o.loot !== null ? stat("Loot", fmt(o.loot)) : ""}
       ${travel ? stat("Travel", travel) : ""}
     </div>
+    ${o.trimmed ? `<p class="hint">Trimmed ${trimmedText(o.trimmed.counts)}: losses ${o.trimmed.lossDelta >= 0 ? "+" : "−"}${fmt(Math.abs(o.trimmed.lossDelta))}</p>` : ""}
     <button type="button" data-sim="${k}">Simulate / edit this army</button>
   </div>`;
 }
@@ -256,8 +269,13 @@ function pasteReport() {
   const r = parseReport(text);
   if (!r) { status.innerHTML = `<span class="warn">No report found in that text. Copy the whole report page in English.</span>`; return; }
   const f = fillFromReport(r, c.side);
-  if (f.enemy.length) c.enemy = f.enemy.map(a => ({ tribe: a.tribe, counts: a.counts.map(n => (n ? String(n) : "")) }));
-  if (f.wallTribe) c.wallTribe = f.wallTribe;
+  const smithy = smithyFromReport(r, c.side);
+  if (f.enemy.length) {
+    c.enemy = f.enemy.map(a => ({ tribe: a.tribe, counts: a.counts.map(n => (n ? String(n) : "")), smithy: Array(10).fill("") }));
+    const e = c.enemy[smithy.index];
+    if (e) { e.smithy = smithy.estimate.suggested.map(n => (n ? String(n) : "")); e.note = smithy.estimate.note; }
+  }
+  if (f.wallTribe && f.wallTribe !== c.wallTribe) { c.wallTribe = f.wallTribe; c.home = c.home.map(() => ""); }
   if (f.wall !== null) c.wall = String(f.wall);
   if (f.coords) { c.x = String(f.coords.x); c.y = String(f.coords.y); }
   if (f.loot) { c.lootRes = f.loot.res.map(String); c.cranny = String(f.loot.crannyCapacity); }
@@ -268,6 +286,7 @@ function pasteReport() {
     f.coords ? `coordinates (${f.coords.x}|${f.coords.y})` : "",
   ].filter(Boolean);
   status.innerHTML = (parts.length ? `Read ${parts.join(", ")}. Check and edit them below.` : "Nothing to fill in from that report.")
+    + ` ${esc(smithy.estimate.note)}`
     + (f.skipped ? ` <span class="warn">${f.skipped === 1 ? "One army was" : `${f.skipped} armies were`} hidden or not recognised.</span>` : "");
   renderTarget(); schedule();
 }
@@ -311,6 +330,7 @@ $("wall").addEventListener("change", e => { c.wall = (e.target as HTMLSelectElem
 $("enemyArmies").addEventListener("input", e => {
   const t = e.target as HTMLInputElement;
   if (t.dataset.ea != null) { c.enemy[+t.dataset.ea].counts[+t.dataset.eu!] = t.value; schedule(); }
+  if (t.dataset.es != null) { const a = c.enemy[+t.dataset.es]; (a.smithy ??= Array(10).fill(""))[+t.dataset.eu!] = t.value; schedule(); }
 });
 $("enemyArmies").addEventListener("change", e => {
   const t = e.target as HTMLSelectElement;
@@ -336,6 +356,7 @@ $("allowed").addEventListener("change", () => {
 });
 $("objective").addEventListener("change", e => { c.objective = (e.target as HTMLSelectElement).value as Objective; schedule(); });
 $("wounded").addEventListener("change", e => { c.woundedRecoverable = (e.target as HTMLInputElement).checked; schedule(); });
+$("trim").addEventListener("change", e => { c.trim = (e.target as HTMLInputElement).checked; schedule(); });
 $("ownPop").addEventListener("input", e => { c.ownPop = (e.target as HTMLInputElement).value; schedule(); });
 $("enemyPop").addEventListener("input", e => { c.enemyPop = (e.target as HTMLInputElement).value; schedule(); });
 $("results").addEventListener("click", e => { const k = (e.target as HTMLElement).dataset.sim; if (k != null) openSim(+k); });

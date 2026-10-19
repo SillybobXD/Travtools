@@ -1,4 +1,5 @@
-import { NATURE_TRIBE } from "../data";
+import { NATURE_TRIBE, UNITS } from "../data";
+import { estimateAttackerSmithy, estimateDefenderSmithy, type SmithyEstimate } from "../calc/smithyEstimate";
 import type { Res4 } from "../types";
 import type { BattleReport } from "./report";
 
@@ -39,3 +40,39 @@ export function fillFromReport(r: BattleReport, side: "attack" | "defend"): Repo
     skipped: r.defenders.length - known.length,
   };
 }
+
+/**
+ * Smithy levels the report's combat strength allows for the enemy army: the attacker's in defend mode,
+ * the defender's in attack mode. `index` is the army in `fillFromReport(...).enemy` it applies to.
+ * Oases (a defender village with coordinates) have no wall; for villages the wall must be in the report.
+ */
+export function smithyFromReport(r: BattleReport, side: "attack" | "defend"): { estimate: SmithyEstimate; index: number } {
+  const known = r.defenders.filter(d => d.tribe && d.sent);
+  if (!r.stats) {
+    const why = r.type === "scout" ? "Scout reports have no combat strength" : "This report has no combat strength statistics";
+    return { estimate: noEstimate(`${why}, so smithy levels can't be estimated.`), index: 0 };
+  }
+  if (side === "defend") {
+    if (!r.attacker.tribe || !r.attacker.sent) return { estimate: noEstimate("The attacker's troops aren't readable, so smithy levels can't be estimated."), index: 0 };
+    return { estimate: estimateAttackerSmithy({ tribe: r.attacker.tribe, sent: r.attacker.sent, strength: r.stats.strength[0], hero: !!r.attacker.hero?.sent }), index: 0 };
+  }
+  const index = Math.max(0, known.findIndex(d => d.tribe !== NATURE_TRIBE && d.sent!.some(n => n > 0)));
+  const units = UNITS[r.attacker.tribe ?? ""] ?? [];
+  const sent = r.attacker.sent ?? [];
+  if (sent.some((n, i) => n > 0 && units[i]?.kind === "siege" && i === 6))
+    return { estimate: noEstimate("Rams may have lowered the wall during the battle, so the defence's smithy levels can't be inferred."), index };
+  const kinds = new Set(sent.flatMap((n, i) => (n > 0 && units[i] && units[i].att > 0 ? [units[i].kind === "cav" ? "cav" : "inf"] : [])));
+  const attackKind = kinds.size === 1 ? ([...kinds][0] as "inf" | "cav") : "mixed";
+  const owner = known.find(d => d.tribe !== NATURE_TRIBE)?.tribe ?? null;
+  const level = r.wall?.before ?? (r.defenders[0]?.coords ? 0 : null);
+  const wall = level !== null && (owner || level === 0) ? { tribe: owner ?? Object.keys(UNITS)[0], level } : null;
+  return {
+    estimate: estimateDefenderSmithy({
+      contingents: r.defenders.map(d => ({ tribe: d.tribe, sent: d.sent, hero: !!d.hero?.sent })),
+      strength: r.stats.strength[1], wall, attackKind,
+    }),
+    index,
+  };
+}
+
+const noEstimate = (note: string): SmithyEstimate => ({ status: "none", ranges: Array(10).fill(null), suggested: Array(10).fill(0), note });

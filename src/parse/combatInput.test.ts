@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fillFromReport } from "./combatInput";
+import { fillFromReport, smithyFromReport } from "./combatInput";
 import { parseReport } from "./report";
-import { DEFENCE_OASIS, RAID_LOST_HIDDEN, RAMS_WALL_DESTROYED, RESOURCE_SCOUT, SCOUT, WALL_DAMAGED } from "./report.fixtures";
+import { ATTACK_WON, DEFENCE_OASIS, RAID_LOST_HIDDEN, RAID_WON, RAMS_WALL_DESTROYED, RESOURCE_SCOUT, SCOUT, WALL_DAMAGED } from "./report.fixtures";
 
 const fill = (text: string, side: "attack" | "defend") => fillFromReport(parseReport(text)!, side);
 
@@ -35,5 +35,44 @@ describe("fillFromReport", () => {
     const f = fill(DEFENCE_OASIS, "defend");
     expect(f.enemy).toEqual([{ tribe: "Teutons", counts: [500, 0, 0, 0, 0, 69, 0, 0, 0, 0] }]);
     expect(f).toMatchObject({ wallTribe: "Teutons", coords: null, loot: null });
+  });
+});
+
+describe("smithyFromReport", () => {
+  const est = (text: string, side: "attack" | "defend") => smithyFromReport(parseReport(text)!, side);
+
+  it("scout reports have no strength to work from", () => {
+    const e = est(SCOUT, "attack").estimate;
+    expect(e.status).toBe("none");
+    expect(e.note).toBe("Scout reports have no combat strength, so smithy levels can't be estimated.");
+  });
+
+  it("defend: the attacker's levels from its strength; a hero makes it uncertain (sample 1)", () => {
+    const { estimate, index } = est(ATTACK_WON, "defend");
+    expect(index).toBe(0);
+    expect(estimate.status).toBe("uncertain");
+    expect(estimate.ranges[0]).toEqual([0, 2]);
+  });
+
+  it("defend: no hero, two unit types (sample 5)", () => {
+    const e = est(DEFENCE_OASIS, "defend").estimate;
+    expect(e.status).toBe("ok");
+    expect(e.note).toContain("Clubswinger");
+  });
+
+  it("attack: a battle report without a wall line can't tell the defence's levels (sample 1)", () => {
+    expect(est(ATTACK_WON, "attack").estimate.note).toContain("wall level");
+  });
+
+  it("attack: a mixed attack on an oasis can't either (sample 5)", () => {
+    expect(est(DEFENCE_OASIS, "attack").estimate.note).toContain("mixed infantry and cavalry");
+  });
+
+  it("attack: rams make the wall during the battle unknown", () => {
+    expect(est(WALL_DAMAGED, "attack").estimate.note).toContain("Rams");
+  });
+
+  it("attack: an empty village gives nothing to estimate", () => {
+    expect(est(RAID_WON, "attack").estimate.status).toBe("none");
   });
 });

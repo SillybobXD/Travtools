@@ -114,6 +114,8 @@
   <section>
     <h2><svg class="ico" aria-hidden="true"><use href="#i-list"></use></svg>Optimize for</h2>
     <select id="objective" aria-label="Optimize for"></select>
+    <label class="check plain gap"><input type="checkbox" id="trim"> Trim small leftovers</label>
+    <p class="hint">Drops unit types worth under 2% of an army and runs the battle again. A type the win needs stays.</p>
     <label class="check plain gap"><input type="checkbox" id="wounded"> Count wounded troops as recoverable</label>
     <p class="hint">Wounded can be healed in a hospital, but real reports show fewer wounded than the 40% the simulator lists when the hospital is full.</p>
     <details class="gap" id="moraleBox">
@@ -129,7 +131,7 @@
   <section class="plan-card" aria-live="polite">
     <h2><svg class="ico" aria-hidden="true"><use href="#i-plan"></use></svg>Best army</h2>
     <div id="results"></div>
-    <p class="hint notes">Not modelled: rams and wall damage, catapults, the hero, artifacts and alliance bonuses. Enemy smithy levels count as 0. Morale isn't verified against the game.</p>
+    <p class="hint notes">Not modelled: rams and wall damage, catapults, the hero, artifacts and alliance bonuses. Enemy smithy levels are what you enter (blank is 0). Morale isn't verified against the game.</p>
   </section>
 
   <section id="simBox" hidden>

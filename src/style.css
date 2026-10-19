@@ -162,3 +162,5 @@ td .ico { width: 1em; height: 1em; margin-right: 0.2em; }
 .card .troop-out { margin-top: 10px; }
 .card button { margin-top: 10px; }
 .notes { margin-top: 14px; }
+.army details { background: none; border: 0; border-radius: 0; padding: 0; margin: 12px 0 0; }
+.army details summary { font-size: 1rem; }

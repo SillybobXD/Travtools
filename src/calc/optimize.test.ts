@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { battle, type Army } from "./combat";
-import { armyValue, combatUnits, lootable, mainMix, optimize, simplexGrid, unitValue, type AttackInput, type DefendInput } from "./optimize";
+import { armyValue, combatUnits, lootable, mainMix, optimize, simplexGrid, simulateOption, TRIM_SHARE, trimOption, unitValue, type AttackInput, type DefendInput } from "./optimize";
 
 /* Teutons: 0 Clubswinger (att 40, cost 250), 2 Axeman, 4 Paladin, 5 Teutonic Knight. Gauls: 0 Phalanx (def 40/50, cost 315). */
 const G = (counts: number[]): Army => ({ tribe: "Gauls", counts });
@@ -206,6 +206,50 @@ describe("properties", () => {
       const b = battle({ attacker: o.sent[0].army, defenders: t.defenders!, village: t.village!, mode: "normal" });
       expect(b.winner).toBe("attacker");
       expect(o.cost).toBeLessThanOrEqual(100_000);
+    }
+  });
+});
+
+describe("trimming small leftovers", () => {
+  const romans = (o: Partial<AttackInput> = {}) => attackOptimal({ objective: "fewestLosses", defenders: [{ tribe: "Romans", counts: [100, 100] }], village: { tribe: "Romans" }, ...o });
+
+  it("drops unit types worth under 2% of the army and simulates it again", () => {
+    expect(TRIM_SHARE).toBe(0.02);
+    const input = romans();
+    const raw = optimize(input).best!;
+    const t = trimOption(input, raw);
+    const small = raw.counts.filter((n, i) => n > 0 && n * unitValue("Teutons", i) < 0.02 * raw.cost).length;
+    if (!small) return;  // nothing to trim for this search
+    expect(t.trimmed).toBeDefined();
+    t.counts.forEach((n, i) => { if (n > 0) expect(n * unitValue("Teutons", i)).toBeGreaterThanOrEqual(0.02 * raw.cost); });
+    expect(t.trimmed!.counts.map((n, i) => n + t.counts[i])).toEqual(raw.counts);
+    expect(t.trimmed!.lossDelta).toBeCloseTo(t.ownLossValue - raw.ownLossValue, 6);
+    const again = battle({ attacker: t.sent[0].army, defenders: input.defenders, village: input.village, mode: "normal" });
+    expect(again).toEqual(t.result);
+  });
+
+  it("trims a hand-made leftover: 400 Clubswingers and 1 Teutonic Knight against 100 Phalanxes", () => {
+    const input = attackOptimal({ objective: "fewestLosses" });
+    const o = simulateOption(input, [{ name: null }], [[400, 0, 0, 0, 0, 1, 0, 0, 0, 0]]);
+    const t = trimOption(input, o);
+    expect(t.counts).toEqual([400, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(t.trimmed!.counts).toEqual([0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    expect(t.win).toBe(true);
+  });
+
+  it("keeps a small type when the win needs it", () => {
+    // 99 Clubswingers + 1 Axeman win against 100 Phalanxes; the Axeman (1.9%) can't go: 99 Clubswingers lose.
+    const input = attackOptimal();
+    const best = optimize(input).best!;
+    expect(best.counts).toEqual([99, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+    expect(trimOption(input, best)).toBe(best);
+  });
+
+  it("with trim on, every option keeps only types worth 2% or more unless the win needs them, and still wins when it did", () => {
+    const r = optimize(romans({ trim: true }));
+    for (const o of [r.best!, ...r.alternatives]) {
+      expect(o.win).toBe(true);
+      if (o.trimmed) expect(o.trimmed.counts.some(n => n > 0)).toBe(true);
     }
   });
 });
