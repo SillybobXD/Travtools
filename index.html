@@ -4,18 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Village planner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23232820'/%3E%3Cpath d='M12 4.5 4.5 11H7v8h4v-5h2v5h4v-8h2.5z' fill='%23e0bd45'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-wood" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5.5 3h13a3.5 3.5 0 0 1 0 7h-13a3.5 3.5 0 0 1 0-7zm13 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM5.5 14h13a3.5 3.5 0 0 1 0 7h-13a3.5 3.5 0 0 1 0-7zm13 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></symbol>
+  <symbol id="i-clay" viewBox="0 0 24 24"><path d="M2 3h9v5H2zm11 0h9v5h-9zM2 10h4v5H2zm6 0h9v5H8zm11 0h3v5h-3zM2 17h9v4H2zm11 0h9v4h-9z"/></symbol>
+  <symbol id="i-iron" viewBox="0 0 24 24"><path d="M7 4h10l2.5 6h-15zM2 21l2.5-8h15L22 21z"/></symbol>
+  <symbol id="i-crop" viewBox="0 0 24 24"><path d="M11 9h2v13h-2z"/><ellipse cx="12" cy="4.5" rx="2" ry="3"/><ellipse cx="8.6" cy="9" rx="1.8" ry="3" transform="rotate(-35 8.6 9)"/><ellipse cx="15.4" cy="9" rx="1.8" ry="3" transform="rotate(35 15.4 9)"/><ellipse cx="8.6" cy="14.5" rx="1.8" ry="3" transform="rotate(-35 8.6 14.5)"/><ellipse cx="15.4" cy="14.5" rx="1.8" ry="3" transform="rotate(35 15.4 14.5)"/></symbol>
+  <symbol id="i-village" viewBox="0 0 24 24"><path d="M12 2.5 2 11h3v10h5.5v-6h3v6H19V11h3z"/></symbol>
+  <symbol id="i-build" viewBox="0 0 24 24"><path d="M13.6 2.2 21.8 10.4l-2.9 2.9-1.8-1.8-9.6 9.6a2.1 2.1 0 0 1-3-3l9.6-9.6-1.8-1.8z"/></symbol>
+  <symbol id="i-party" viewBox="0 0 24 24"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></symbol>
+  <symbol id="i-troops" viewBox="0 0 24 24"><path d="M19.5 2.5H22V5L11.4 15.6l1.8 1.8-1.4 1.4-1.6-1.6-3.4 3.4a1.5 1.5 0 0 1-2.1-2.1l3.4-3.4-1.6-1.6 1.4-1.4 1.8 1.8z"/></symbol>
+  <symbol id="i-plan" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M9 2h6a1 1 0 0 1 1 1v1h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V3a1 1 0 0 1 1-1zm1 2v2h4V4zM7 10v2h10v-2zm0 4v2h7v-2z"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><path d="M2 4h3l2.4 10H19l2-7H8.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="9" cy="19" r="2"/><circle cx="17" cy="19" r="2"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3zM4 18h16v3H4z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h16v2H4z"/></symbol>
+</svg>
 <main>
   <h1>Village planner</h1>
   <p class="lede">Plan building upgrades and troop training together, then see whether to trade with the NPC merchant or send resources from another village.</p>
 
   <section>
-    <h2>Village</h2>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-village"></use></svg>Village</h2>
     <div class="village-bar">
       <div><label for="village">Saved village</label><select id="village"></select></div>
       <button type="button" id="newVillage">New</button>
@@ -27,14 +42,14 @@
       <div><label for="speed">Server speed</label><select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option></select></div>
     </div>
     <div class="grid4 gap">
-      <div class="res" style="--c: var(--wood)"><label for="have0">Wood</label><input id="have0" inputmode="numeric" autocomplete="off"></div>
-      <div class="res" style="--c: var(--clay)"><label for="have1">Clay</label><input id="have1" inputmode="numeric" autocomplete="off"></div>
-      <div class="res" style="--c: var(--iron)"><label for="have2">Iron</label><input id="have2" inputmode="numeric" autocomplete="off"></div>
-      <div class="res" style="--c: var(--crop)"><label for="have3">Crop</label><input id="have3" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--wood)"><label for="have0"><svg class="ico" aria-hidden="true"><use href="#i-wood"></use></svg>Wood</label><input id="have0" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--clay)"><label for="have1"><svg class="ico" aria-hidden="true"><use href="#i-clay"></use></svg>Clay</label><input id="have1" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--iron)"><label for="have2"><svg class="ico" aria-hidden="true"><use href="#i-iron"></use></svg>Iron</label><input id="have2" inputmode="numeric" autocomplete="off"></div>
+      <div class="res" style="--c: var(--crop)"><label for="have3"><svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg>Crop</label><input id="have3" inputmode="numeric" autocomplete="off"></div>
     </div>
     <div class="grid2 gap">
-      <div><label for="wh">Warehouse capacity</label><input id="wh" inputmode="numeric" autocomplete="off"></div>
-      <div><label for="gr">Granary capacity</label><input id="gr" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="whLvl">Warehouse</label><select id="whLvl"></select><input id="wh" class="gap" inputmode="numeric" autocomplete="off" aria-label="Warehouse capacity" placeholder="Capacity" hidden></div>
+      <div><label for="grLvl">Granary</label><select id="grLvl"></select><input id="gr" class="gap" inputmode="numeric" autocomplete="off" aria-label="Granary capacity" placeholder="Capacity" hidden></div>
     </div>
     <div class="grid2 gap">
       <div><label for="x">Map X</label><input id="x" autocomplete="off" placeholder="e.g. 12"></div>
@@ -43,7 +58,7 @@
   </section>
 
   <details id="importBox">
-    <summary>Import from the game</summary>
+    <summary><svg class="ico" aria-hidden="true"><use href="#i-import"></use></svg>Import from the game</summary>
     <p class="hint" style="margin-top:0">In the game, open Village overview, then the Resources tab for resources or the Capacity tab for warehouse and granary. Select all, copy, and paste it here. You can paste one tab, then the other.</p>
     <label for="importText" class="gap">Copied page</label>
     <textarea id="importText" rows="4" autocomplete="off" spellcheck="false"></textarea>
@@ -52,14 +67,14 @@
   </details>
 
   <section>
-    <h2>Building upgrades</h2>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-build"></use></svg>Building upgrades</h2>
     <div id="builds"></div>
     <button type="button" id="addBuild" class="gap">Add building</button>
     <p class="hint">Use “How many” for several buildings of the same kind, for example 6 croplands going from level 5 to 7.</p>
   </section>
 
   <section>
-    <h2>Celebrations</h2>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-party"></use></svg>Celebrations</h2>
     <div class="grid2">
       <div><label for="celeb0">Small celebrations</label><input id="celeb0" inputmode="numeric" autocomplete="off"></div>
       <div><label for="celeb1">Great celebrations</label><input id="celeb1" inputmode="numeric" autocomplete="off"></div>
@@ -68,16 +83,17 @@
   </section>
 
   <section>
-    <h2>Troops</h2>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-troops"></use></svg>Troops</h2>
     <div id="troops"></div>
     <button type="button" id="addTroop" class="gap">Add troop type</button>
     <p class="hint" id="ratioHint">Each troop type has its own way to plan: as many as possible, a set number, or enough to fill a training time. Set numbers and timed troops are paid first; “Max possible” types share the rest by their ratio, for example 2 and 1 for twice as many of the first.</p>
     <div id="trainFields"></div>
+    <div id="tradeWrap" class="gap"><label class="check plain"><input type="checkbox" id="useTrade"> Use an NPC trade for “Max possible”</label></div>
     <div class="troop-out" id="troopOut"></div>
   </section>
 
   <section class="plan-card" aria-live="polite">
-    <h2>Plan</h2>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-plan"></use></svg>Plan</h2>
     <p class="verdict" id="verdict"></p>
     <div class="table-wrap">
       <table>
@@ -87,11 +103,11 @@
       </table>
     </div>
     <div class="hero-wrap" role="group" aria-labelledby="heroLabel">
-      <span id="heroLabel">Take from the hero instead of trading:</span>
-      <label class="check" style="--c: var(--wood)"><input type="checkbox" id="hero0"> Wood</label>
-      <label class="check" style="--c: var(--clay)"><input type="checkbox" id="hero1"> Clay</label>
-      <label class="check" style="--c: var(--iron)"><input type="checkbox" id="hero2"> Iron</label>
-      <label class="check" style="--c: var(--crop)"><input type="checkbox" id="hero3"> Crop</label>
+      <span id="heroLabel">Do not convert into (trade all of it away and claim what you need from the hero):</span>
+      <label class="check" style="--c: var(--wood)"><input type="checkbox" id="hero0"> <svg class="ico" aria-hidden="true"><use href="#i-wood"></use></svg>Wood</label>
+      <label class="check" style="--c: var(--clay)"><input type="checkbox" id="hero1"> <svg class="ico" aria-hidden="true"><use href="#i-clay"></use></svg>Clay</label>
+      <label class="check" style="--c: var(--iron)"><input type="checkbox" id="hero2"> <svg class="ico" aria-hidden="true"><use href="#i-iron"></use></svg>Iron</label>
+      <label class="check" style="--c: var(--crop)"><input type="checkbox" id="hero3"> <svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg>Crop</label>
     </div>
     <div class="inline" id="prefWrap">
       <label for="pref">Put NPC leftover into</label>
@@ -99,7 +115,7 @@
     </div>
     <p class="hint" id="planNote"></p>
 
-    <h3>Sending from another village</h3>
+    <h3><svg class="ico" aria-hidden="true"><use href="#i-cart"></use></svg>Sending from another village</h3>
     <div><label for="sendFrom">Send from</label><select id="sendFrom"></select></div>
     <div class="grid3 gap">
       <div><label for="merchCap">Each merchant carries</label><input id="merchCap" inputmode="numeric" autocomplete="off"></div>
@@ -110,7 +126,7 @@
   </section>
 
   <details>
-    <summary>Unit stats</summary>
+    <summary><svg class="ico" aria-hidden="true"><use href="#i-list"></use></svg>Unit stats</summary>
     <p class="hint" style="margin-top:0">Pre-filled with standard Travian Legends values at 1× speed and building level 1. If your server shows different numbers, edit them here. Your edits are kept for all villages.</p>
     <div class="gap"><label for="statUnit">Unit</label><select id="statUnit"></select></div>
     <div class="grid4 gap">

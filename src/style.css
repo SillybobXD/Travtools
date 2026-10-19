@@ -115,3 +115,10 @@ input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; accen
 .trow-nums { grid-template-columns: 9.2rem minmax(0, 1fr) minmax(0, 1fr); }
 input[readonly] { background: transparent; border-style: dashed; color: var(--muted); }
 .trow-nums .span2 { grid-column: span 2; }
+
+/* Icons */
+.ico { width: 1.1em; height: 1.1em; fill: currentColor; vertical-align: -0.18em; margin-right: 0.35em; flex: none; }
+h2 .ico, h3 .ico, summary .ico { color: var(--muted); }
+label.check .ico { margin-right: 0; }
+label.check.plain { color: var(--ink); font-weight: 500; }
+td .ico { width: 1em; height: 1em; margin-right: 0.2em; }

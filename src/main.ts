@@ -1,5 +1,5 @@
 import type { Res4, TrainingBuilding, Unit } from "./types";
-import { BUILDINGS, CELEBRATIONS, MERCH, UNITS } from "./data";
+import { BUILDINGS, CAPACITY, CELEBRATIONS, MERCH, UNITS } from "./data";
 import { fmt, fmtTime, toNum } from "./calc/format";
 import { buildingTotals } from "./calc/buildings";
 import { celebrationCost } from "./calc/celebrations";
@@ -13,6 +13,9 @@ const TRAIN_NAME: Record<TrainingBuilding, string> = { B: "Barracks", S: "Stable
 const TRAIN_ORDER: TrainingBuilding[] = ["B", "S", "W", "R"];
 const NAMES = ["Wood", "Clay", "Iron", "Crop"];
 const COLORS = ["var(--wood)", "var(--clay)", "var(--iron)", "var(--crop)"];
+const ICONS = ["wood", "clay", "iron", "crop"];
+/** An icon from the sprite in index.html. */
+const icon = (name: string) => `<svg class="ico" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 const RES = [0, 1, 2, 3] as const;
 /** Plain inputs saved per village as typed. */
 const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "x", "y", "dist", "merchCap", "merchSpeed"];
@@ -81,6 +84,7 @@ function applyVillage() {
   FIELDS.forEach(f => $(f).value = "");
   loadMerchant();
   FIELDS.forEach(f => { const s = v.fields[f]; if (s != null && s !== "") $(f).value = s; });
+  syncStorage();
   v.celebs = CELEBRATIONS.map((_, i) => v.celebs?.[i] ?? "");
   v.celebs.forEach((s, i) => $("celeb" + i).value = s);
   const units = UNITS[v.tribe];
@@ -90,11 +94,37 @@ function applyVillage() {
   v.train ??= {};
   v.hero = RES.map(i => !!v.hero?.[i]);
   v.hero.forEach((h, i) => $("hero" + i).checked = h);
+  $("useTrade").checked = v.useTrade !== false;
   fillVillages();
   fillStatUnits(v.troops[0]?.unit ?? 0);
   renderBuilds();
   renderTroops();
   calc();
+}
+
+/* ---- storage dropdowns ---- */
+/** Shows the level that matches the typed capacity, or "Other amount" with the field. */
+function syncStorage() {
+  for (const id of ["wh", "gr"]) {
+    const sel = $<HTMLSelectElement>(id + "Lvl"), raw = $(id).value.trim();
+    const lvl = CAPACITY.indexOf(toNum(raw));
+    sel.value = !raw ? "" : lvl >= 0 ? String(lvl) : "custom";
+    $(id).hidden = sel.value !== "custom";
+  }
+}
+function fillStorage() {
+  for (const [id, name] of [["wh", "warehouse"], ["gr", "granary"]]) {
+    const sel = $<HTMLSelectElement>(id + "Lvl");
+    sel.add(new Option("Not set", ""));
+    CAPACITY.forEach((c, lvl) => sel.add(new Option(lvl ? `Level ${lvl} · ${fmt(c)}` : `No ${name} · ${fmt(c)}`, String(lvl))));
+    sel.add(new Option("Other amount", "custom"));
+    sel.addEventListener("change", () => {
+      const input = $(id);
+      if (sel.value === "custom") { input.hidden = false; input.focus(); }
+      else { input.value = sel.value === "" ? "" : String(CAPACITY[+sel.value]); input.hidden = true; }
+      calc();
+    });
+  }
 }
 
 /* ---- import from the game ---- */
@@ -155,7 +185,7 @@ function applyImport() {
       added++;
     } else updated++;
     const target = store.villages[id];
-    if (row.name) target.gameName = row.name;
+    if (row.name) { target.gameName = row.name; target.name = row.name; }
     const c = importCoords[row.name];
     if (c) { target.fields.x = String(c.x); target.fields.y = String(c.y); }
     row.res?.forEach((x, k) => target.fields["have" + k] = String(x));
@@ -241,13 +271,15 @@ function renderTroops() {
   renderTrainFields();
 }
 
+const levelOptions = (sel: number) => Array.from({ length: 20 }, (_, k) => `<option value="${k + 1}"${k + 1 === sel ? " selected" : ""}>${k + 1}</option>`).join("");
+
 /** Level and bonus inputs for each training building the rows use. */
 function renderTrainFields() {
   const used = TRAIN_ORDER.filter(b => v.troops.some(r => UNITS[v.tribe][r.unit].building === b));
   $("trainFields").innerHTML = used.map(b => {
     const t = trainOf(b), name = TRAIN_NAME[b];
     return `<div class="grid2 gap">
-      <div><label for="tlvl${b}">${name} level</label><input id="tlvl${b}" data-b="${b}" data-f="lvl" inputmode="numeric" autocomplete="off" value="${esc(t.lvl)}"></div>
+      <div><label for="tlvl${b}">${name} level</label><select id="tlvl${b}" data-b="${b}" data-f="lvl">${levelOptions(Math.min(20, toNum(t.lvl) || 1))}</select></div>
       <div><label for="tbon${b}">${name} time bonus %</label><input id="tbon${b}" data-b="${b}" data-f="bonus" inputmode="numeric" autocomplete="off" value="${esc(t.bonus)}"></div>
     </div>`;
   }).join("");
@@ -277,8 +309,7 @@ function calc() {
   const otherTot = res4(i => bTot[i] + cc.tot[i]);
 
   /* troops */
-  const tradable = RES.map(i => !v.hero![i]);
-  const haveTrade = have.reduce((a, b, i) => a + (tradable[i] ? b : 0), 0);
+  const convert = RES.map(i => !v.hero![i]);
   const rows = v.troops.map(r => {
     const u = unitStats(v.tribe, r.unit), t = trainOf(u.building);
     const perUnit = trainingTime(u.time, toNum(t.lvl), speed, toNum(t.bonus));
@@ -287,13 +318,20 @@ function calc() {
       plan: { mode: r.mode!, cost: u.cost, weight: ratio(r.ratio), count: toNum(r.count), seconds: (toNum(r.hours) * 60 + toNum(r.mins)) * 60, perUnit },
     };
   });
-  const { counts, capLimited } = planTroops(rows.map(r => r.plan), haveTrade, otherTot, caps, tradable);
+  const trade = v.useTrade !== false, hasMax = rows.some(r => r.plan.mode === "max");
+  const withTrade = planTroops(rows.map(r => r.plan), have, otherTot, caps, convert, true);
+  const noTrade = planTroops(rows.map(r => r.plan), have, otherTot, caps, convert, false);
+  const { counts, capLimited } = trade ? withTrade : noTrade;
+  /** The max-possible counts the other way, shown next to the ones in the plan. */
+  const alt = trade ? noTrade.counts : withTrade.counts, altLabel = trade ? "without trading" : "with an NPC trade";
+  $("tradeWrap").hidden = !hasMax;
 
   const upkeep = rows.reduce((s, r, i) => s + r.u.upkeep * counts[i], 0);
   const parts = [];
   if (rows.length === 1) {
     const [r] = rows, n = counts[0];
     parts.push(`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${esc(r.u.name)}</span></div>`);
+    if (hasMax) parts.push(`<div class="stat"><span>${trade ? "Without trading" : "With an NPC trade"}</span><strong>${fmt(alt[0])}</strong></div>`);
     if (r.perUnit > 0) {
       parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(r.perUnit)}</strong></div>`);
       parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(r.perUnit * n)}</strong></div>`);
@@ -301,9 +339,11 @@ function calc() {
   } else if (rows.length > 1) {
     rows.forEach((r, i) => {
       const el = $("tout" + i); if (!el) return;
-      el.innerHTML = `<span><b>${fmt(counts[i])}</b> units</span>` + (r.perUnit > 0 ? `<span>each ${fmtTime(r.perUnit)}</span><span>all ${fmtTime(r.perUnit * counts[i])}</span>` : `<span class="warn">no base time</span>`);
+      el.innerHTML = `<span><b>${fmt(counts[i])}</b> units</span>` + (r.plan.mode === "max" ? `<span class="zero">${fmt(alt[i])} ${altLabel}</span>` : "") +
+        (r.perUnit > 0 ? `<span>each ${fmtTime(r.perUnit)}</span><span>all ${fmtTime(r.perUnit * counts[i])}</span>` : `<span class="warn">no base time</span>`);
     });
     parts.push(`<div><div class="big">${fmt(counts.reduce((a, b) => a + b, 0))}</div><span class="hint" style="margin:0">units in total</span></div>`);
+    if (hasMax) parts.push(`<div class="stat"><span>${trade ? "Without trading" : "With an NPC trade"}</span><strong>${fmt(alt.reduce((a, b) => a + b, 0))}</strong></div>`);
     parts.push(rows.every(r => r.perUnit > 0)
       ? `<div class="stat"><span>All done in</span><strong>${fmtTime(mixDuration(rows, counts))}</strong></div>`
       : `<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
@@ -314,21 +354,21 @@ function calc() {
   const troopSum = rows.reduce((s, r, k) => s + r.u.cost.reduce((a, b) => a + b, 0) * counts[k], 0);
 
   /* verdict */
-  const { haveTotal, needSum, needAll, shortEach, shortSum, heroTake, heroSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need, tradable);
+  const { haveTotal, needSum, needAll, shortEach, shortSum, heroTake, heroSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need, convert);
   const heroList = joinAnd(RES.filter(i => heroTake[i] > 0).map(i => `${fmt(heroTake[i])} ${NAMES[i].toLowerCase()}`));
-  const heroTxt = heroSum > 0 ? ` Take ${heroList} from the hero.` : "";
+  const heroTxt = heroSum > 0 ? ` Then claim ${heroList} from the hero.` : "";
   let verdict;
   if (needAll === 0) verdict = "Add buildings or troops to see what they cost.";
-  else if (coveredDirect) verdict = heroSum > 0 ? `Enough once you take ${heroList} from the hero. No trade needed.` : `You already have enough. No trade needed.`;
+  else if (coveredDirect) verdict = heroSum > 0 ? `Enough once you claim ${heroList} from the hero. No trade needed.` : `You already have enough. No trade needed.`;
   else if (coveredNpc) verdict = `One NPC trade covers it. You have ${fmt(haveTotal - needSum)} to spare.` + heroTxt;
   else verdict = `You're ${fmt(needSum - haveTotal)} resources short, even after trading.` + heroTxt;
   $("verdict").textContent = verdict;
 
   /* NPC targets */
   const prefSel = $<HTMLSelectElement>("pref");
-  [...prefSel.options].forEach(o => o.disabled = !tradable[+o.value]);
-  if (!tradable[+prefSel.value]) { const first = [3, 0, 1, 2].find(i => tradable[i]); if (first !== undefined) prefSel.value = String(first); }
-  const target = useNpc ? npcTargets(need, haveTotal, caps, parseInt(prefSel.value, 10), tradable, have) : need.slice() as Res4;
+  [...prefSel.options].forEach(o => o.disabled = !convert[+o.value]);
+  if (!convert[+prefSel.value]) { const first = [3, 0, 1, 2].find(i => convert[i]); if (first !== undefined) prefSel.value = String(first); }
+  const target = useNpc ? npcTargets(need, haveTotal, caps, parseInt(prefSel.value, 10), convert) : need.slice() as Res4;
   $("prefWrap").hidden = !useNpc;
   $("lastHead").textContent = useNpc ? "Set NPC to" : "Missing";
 
@@ -337,15 +377,15 @@ function calc() {
     const tr = document.createElement("tr"); tr.style.setProperty("--c", COLORS[i]);
     let last;
     const bar = (n: number) => caps[i] === Infinity ? "" : `<div class="bar"><i style="width:${Math.min(100, n / caps[i] * 100)}%"></i></div>`;
-    if (!tradable[i]) {
-      const take = heroTake[i] > 0 ? `<span class="up">+${fmt(heroTake[i])} from hero</span>` : "";
-      last = useNpc ? `<span class="strong">${fmt(have[i])}</span> <span class="zero">(keep)</span>${take ? " " + take : ""}${bar(have[i])}`
+    if (!convert[i]) {
+      const take = heroTake[i] > 0 ? `<div class="up">hero +${fmt(heroTake[i])}</div>` : "";
+      last = useNpc ? `<span class="strong">0</span> <span class="${have[i] ? "down" : "zero"}">(${have[i] ? "−" : "±"}${fmt(have[i])})</span>${take}`
         : take || `<span class="zero">0</span>`;
     } else if (useNpc) {
       const d = target[i] - have[i], cls = d > 0 ? "up" : d < 0 ? "down" : "zero";
       last = `<span class="strong">${fmt(target[i])}</span> <span class="${cls}">(${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt(Math.abs(d))})</span>` + bar(target[i]);
     } else last = shortEach[i] > 0 ? `<span class="down">${fmt(shortEach[i])}</span>` : `<span class="zero">0</span>`;
-    tr.innerHTML = `<td>${NAMES[i]}</td><td>${fmt(have[i])}</td><td>${fmt(need[i])}</td><td>${last}</td>`;
+    tr.innerHTML = `<td>${icon(ICONS[i])}${NAMES[i]}</td><td>${fmt(have[i])}</td><td>${fmt(need[i])}</td><td>${last}</td>`;
     body.appendChild(tr);
   }
   $("planFoot").innerHTML = `<tr><td>Total</td><td>${fmt(have.reduce((a, b) => a + b, 0))}</td><td>${fmt(needAll)}</td><td>${useNpc ? fmt(target.reduce((a, b) => a + b, 0)) : fmt(shortSum)}</td></tr>`;
@@ -381,14 +421,13 @@ function calc() {
     : src && auto === null ? "Add map coordinates for both villages to get the distance." : "Add a distance to see travel time.";
   let send;
   if (needAll === 0) send = `<p class="zero">Nothing to send yet.</p>`;
-  else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything${heroSum > 0 ? " once you take from the hero" : ""}.</p>`;
+  else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything${heroSum > 0 ? " once you claim from the hero" : ""}.</p>`;
   else {
     const exact = shortEach.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
     send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(shortSum)} total, ${fmt(merchants(shortSum))} merchant${merchants(shortSum) === 1 ? "" : "s"}.</p>`;
     if (!coveredNpc) {
       const gap = needSum - haveTotal;
-      const except = tradable.every(Boolean) ? "" : " except " + joinAnd(RES.filter(i => !tradable[i]).map(i => NAMES[i].toLowerCase()));
-      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource${except}, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts.</p>`;
+      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts.</p>`;
     } else send += `<p><strong>Or skip sending</strong> and use the NPC trade above.</p>`;
     if (src) {
       const srcHave = res4(i => toNum(src.fields["have" + i]));
@@ -448,6 +487,7 @@ CELEBRATIONS.forEach((_, i) => $("celeb" + i).addEventListener("input", e => { v
 statSel.addEventListener("change", showStats);
 $("resetUnit").addEventListener("click", () => { delete store.overrides[v.tribe]?.[statSel.value]; showStats(); calc(); });
 RES.forEach(i => $("hero" + i).addEventListener("change", e => { v.hero![i] = (e.target as HTMLInputElement).checked; calc(); }));
+$("useTrade").addEventListener("change", e => { v.useTrade = (e.target as HTMLInputElement).checked; calc(); });
 $("sendFrom").addEventListener("change", e => { v.sendFrom = (e.target as HTMLSelectElement).value; calc(); });
 
 $("addBuild").addEventListener("click", () => {
@@ -494,4 +534,5 @@ $("trainFields").addEventListener("input", e => {
   calc();
 });
 
+fillStorage();
 applyVillage();

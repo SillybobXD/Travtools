@@ -6,21 +6,21 @@ export function storageCaps(warehouse: number, granary: number): Res4 {
 }
 
 export interface PlanNeeds {
-  /** Total of the tradable resources. */
+  /** Everything the village has: all of it can go into the NPC trade. */
   haveTotal: number;
-  /** Need of the tradable resources. */
+  /** Need of the resources the trade may convert into. */
   needSum: number;
-  /** Need of all four resources, hero ones included. */
+  /** Need of all four resources. */
   needAll: number;
-  /** Missing amount per tradable resource without trading; 0 for hero resources. */
+  /** Missing amount per resource without trading; 0 for resources claimed from the hero. */
   shortEach: Res4;
   shortSum: number;
-  /** What to take from the hero per resource. */
+  /** What to claim from the hero per resource. */
   heroTake: Res4;
   heroSum: number;
-  /** Every tradable resource is already covered. */
+  /** Every resource the trade may convert into is already covered. */
   coveredDirect: boolean;
-  /** Tradable resources cover the tradable need, so one NPC trade works. */
+  /** The village's total covers the need of the other resources, so one NPC trade works. */
   coveredNpc: boolean;
   /** An NPC trade is both possible and needed. */
   useNpc: boolean;
@@ -28,31 +28,36 @@ export interface PlanNeeds {
 
 const ALL = [true, true, true, true];
 
-/** `tradable[i]` false means resource i comes from the hero and is left out of the NPC trade. */
-export function planNeeds(have: Res4, need: Res4, tradable: boolean[] = ALL): PlanNeeds {
-  const sumT = (r: Res4) => r.reduce((a, b, i) => a + (tradable[i] ? b : 0), 0);
-  const haveTotal = sumT(have), needSum = sumT(need);
-  const shortEach = need.map((v, i) => tradable[i] ? Math.max(0, v - have[i]) : 0) as Res4;
-  const heroTake = need.map((v, i) => tradable[i] ? 0 : Math.max(0, v - have[i])) as Res4;
+/**
+ * `convert[i]` false means "do not convert into resource i": the trade turns all of it into
+ * the other resources and its need is claimed from the hero instead. Without a trade only
+ * its shortfall is claimed.
+ */
+export function planNeeds(have: Res4, need: Res4, convert: boolean[] = ALL): PlanNeeds {
+  const haveTotal = have.reduce((a, b) => a + b, 0);
+  const needSum = need.reduce((a, b, i) => a + (convert[i] ? b : 0), 0);
+  const shortEach = need.map((v, i) => convert[i] ? Math.max(0, v - have[i]) : 0) as Res4;
   const shortSum = shortEach.reduce((a, b) => a + b, 0);
   const coveredDirect = shortSum === 0;
   const coveredNpc = haveTotal >= needSum;
+  const useNpc = coveredNpc && !coveredDirect;
+  const heroTake = need.map((v, i) => convert[i] ? 0 : useNpc ? v : Math.max(0, v - have[i])) as Res4;
   return {
     haveTotal, needSum, needAll: need.reduce((a, b) => a + b, 0), shortEach, shortSum,
     heroTake, heroSum: heroTake.reduce((a, b) => a + b, 0),
-    coveredDirect, coveredNpc, useNpc: coveredNpc && !coveredDirect,
+    coveredDirect, coveredNpc, useNpc,
   };
 }
 
 /**
- * Amounts to set in the NPC merchant: each tradable resource gets what's needed, and the
- * leftover goes to `pref` first, then crop, wood, clay, iron, within storage caps.
- * `haveTotal` is the total of the tradable resources. Hero resources keep what the village has.
+ * Amounts to set in the NPC merchant: each resource gets what's needed, and the leftover goes
+ * to `pref` first, then crop, wood, clay, iron, within storage caps. Resources the trade may
+ * not convert into are set to 0. `haveTotal` is everything the village has.
  */
-export function npcTargets(need: Res4, haveTotal: number, caps: Res4, pref: number, tradable: boolean[] = ALL, have?: Res4): Res4 {
-  const target = need.map((v, i) => tradable[i] ? v : have ? have[i] : v) as Res4;
-  let left = haveTotal - need.reduce((a, b, i) => a + (tradable[i] ? b : 0), 0);
-  for (const i of [pref, 3, 0, 1, 2].filter((v, k, a) => a.indexOf(v) === k && tradable[v])) {
+export function npcTargets(need: Res4, haveTotal: number, caps: Res4, pref: number, convert: boolean[] = ALL): Res4 {
+  const target = need.map((v, i) => convert[i] ? v : 0) as Res4;
+  let left = haveTotal - target.reduce((a, b) => a + b, 0);
+  for (const i of [pref, 3, 0, 1, 2].filter((v, k, a) => a.indexOf(v) === k && convert[v])) {
     if (left <= 0) break;
     const room = caps[i] === Infinity ? left : Math.max(0, caps[i] - target[i]);
     const add = Math.min(room, left); target[i] += add; left -= add;

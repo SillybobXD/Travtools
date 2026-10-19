@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, CELEBRATIONS, MERCH, UNITS } from ".";
+import { BUILDINGS, CAPACITY, CELEBRATIONS, MERCH, UNITS } from ".";
 
 const isRes4 = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every(v => Number.isInteger(v) && v >= 0);
 
@@ -22,6 +22,12 @@ describe("data files", () => {
   it("celebrations are well-formed", () => {
     expect(CELEBRATIONS.map(c => c.name)).toEqual(["Small celebration", "Great celebration"]);
     for (const c of CELEBRATIONS) expect(isRes4(c.cost), c.name).toBe(true);
+  });
+
+  it("storage capacity goes up with every level, up to level 20", () => {
+    expect(CAPACITY).toHaveLength(21);
+    expect(CAPACITY.every((c, i) => i === 0 || c > CAPACITY[i - 1])).toBe(true);
+    expect([CAPACITY[2], CAPACITY[6], CAPACITY[9], CAPACITY[13], CAPACITY[15]]).toEqual([1700, 5000, 9600, 21400, 31300]);
   });
 
   it("buildings are well-formed", () => {

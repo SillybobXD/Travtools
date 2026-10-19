@@ -1,6 +1,6 @@
 # Travian Village Planner
 
-Static web tool for Travian Legends players. It keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution (optionally leaving out resources taken from the hero), and works out what to send from another village, with the distance from map coordinates.
+Static web tool for Travian Legends players. It keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution (optionally never converting into resources you claim from the hero), and works out what to send from another village, with the distance from map coordinates.
 
 ## Structure
 Vite + TypeScript, no runtime dependencies. Output is a static site in `dist/`.
@@ -17,12 +17,13 @@ src/
     buildings.json      buildings: level-1 cost, growth factor k, max level
     merchants.json      merchant capacity and speed per tribe
     celebrations.json   small and great celebration costs
-    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS
+    capacity.json       warehouse/granary capacity by level (0 = none)
+    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY
   parse/
     overview.ts         parseOverview: reads a pasted copy of the game's village overview
   calc/                 pure functions, no DOM access
     buildings.ts        round5, levelCost, rangeCost, buildingTotals
-    troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, planTroops, mixDuration
+    troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, maxTroopMixDirect, planTroops, mixDuration
     celebrations.ts     celebrationCost
     npc.ts              storageCaps, planNeeds, npcTargets
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
@@ -44,21 +45,25 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Keep calculation logic in `src/calc/` as pure functions with tests; `main.ts` only reads inputs and renders.
 - Do not reorder entries in `units.json`, `buildings.json` or `celebrations.json`: saved state stores indices. Append new entries at the end of a list.
 - Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
-- A single troop row with no celebrations and nothing from the hero must give exactly the results of the old single-unit version in each mode; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
+- A single troop row with no celebrations, every resource convertible and “Use an NPC trade” on must give exactly the results of the old single-unit version in each mode; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
 - Older saves had one village-wide troop `mode` (none/max/count/time) with shared hours and minutes. `normalizeTroops` gives each row its own mode and time on load; "none" becomes no rows. Keep it.
 - `[hidden] { display: none !important; }` in `style.css` makes the `hidden` attribute win over classes that set `display`. Keep it.
 - Form fields set `box-sizing: border-box` themselves, because Chrome doesn't pass it through to elements inside `<details>`.
 - The paste import must stay something the user triggers by copying text. Travian's rules ban tools that automate or read the game directly.
 - `vite.config.ts` uses `base: "./"` so the build works under any GitHub Pages path, and `cssMinify: false` so the stylesheet ships as written.
 - Keep it dependency-free at runtime unless a feature clearly needs a library.
+- Icons are our own inline SVG symbols in the sprite at the top of `index.html` (`<use href="#i-wood">`, or `icon()` in `main.ts`). Don't copy Travian's artwork.
+- The plan table must fit 375px without scrolling: keep long text in its cells on separate lines.
 - Mobile-first: the main user plays on a phone. Support light and dark mode via the CSS variables.
 
 ## Formulas in use
 - Building level cost: `round5(base * k^(level-1))` per resource. `k` is 1.67 for resource fields, 1.80 for factory buildings, and about 1.28 for most others.
+- Warehouse and granary are chosen by level (`capacity.json`) or “Other amount” for anything else (several warehouses, great warehouse, artifacts). The typed capacity in `fields.wh`/`fields.gr` stays the saved value; the dropdown follows it.
 - Training time per unit: `base * 0.9^(buildingLevel-1) / serverSpeed * (1 - bonus%)`.
 - Max troops: `floor((totalResources - otherCosts) / unitCostSum)`, where other costs are buildings plus celebrations, also limited by warehouse/granary capacity per resource (a cap is ignored for a resource whose other costs alone exceed it).
 - Troop rows: each row has its own mode. "Set number" and "Fill a time" rows (`floor(seconds / perUnit)`) are fixed and paid first, with buildings and celebrations. "Max possible" rows share what is left by ratio: the largest number of batches `x` (one batch = `weight` units of each max row) under the same limits, then each row gets `floor(weight * x)`. Level and time bonus are set per training building; each building is its own queue, and "All done in" is the longest queue.
-- Hero resources: a resource ticked “Take from the hero” is left out of the NPC trade. It keeps the village's amount in the NPC dialog, its shortfall is taken from the hero, it doesn't count toward the total for max troops, and only storage limits it.
+- “Do not convert into” (saved as `hero` per resource): the NPC trade never converts into that resource. When a trade is needed, all of the village's amount goes into the trade (its NPC target is 0) and its whole need is claimed from the hero afterwards; without a trade only its shortfall is claimed. For max troops its cost doesn't count against the total (the hero covers it); only storage limits it.
+- Max possible with and without trading: with a trade the total is shared (`maxTroopMix`); without one each resource limits on its own (`maxTroopMixDirect`). Both are shown; “Use an NPC trade” (`useTrade`, default on) picks which one goes into the plan.
 - Celebrations: fixed cost per celebration (small 6,400 / 6,650 / 5,940 / 1,340, great 29,700 / 33,250 / 32,000 / 6,700).
 - NPC leftover goes to the preferred resource first, then crop, wood, clay, iron, within capacity.
 - Merchant travel time: `distance / (merchantSpeed * serverSpeed)`.
@@ -82,4 +87,4 @@ The user copies the whole Village overview page, Resources tab and/or Capacity t
 - picks the active village as the Resources row closest to the top bar, or the only Capacity row with the top bar's warehouse and granary, else the line before “Population”;
 - reads coordinates `(x|y)` from the village list, on their own line under the name or after it.
 
-Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one. Rows from both tabs are merged by name. Each village gets whatever the paste has: resources, storage, coordinates. The village you were in always gets the top bar (resources and storage, the freshest values), and the planner switches to it.
+Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one, and the saved village is renamed to its game name. Rows from both tabs are merged by name. Each village gets whatever the paste has: resources, storage, coordinates. The village you were in always gets the top bar (resources and storage, the freshest values), and the planner switches to it.

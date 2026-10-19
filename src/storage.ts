@@ -33,8 +33,13 @@ export interface VillageState {
   train: Partial<Record<TrainingBuilding, { lvl: string; bonus: string }>>;
   /** Number of small and great celebrations. */
   celebs: string[];
-  /** Resources taken from the hero instead of the NPC trade, per resource. */
+  /**
+   * Per resource: “do not convert into”. The NPC trade turns all of it into the other
+   * resources and its need is claimed from the hero. (Named `hero` since older saves.)
+   */
   hero?: boolean[];
+  /** Whether “Max possible” counts on an NPC trade. Missing means yes. */
+  useTrade?: boolean;
   /** Saved village the resources are sent from, if any. */
   sendFrom?: string;
   fields: Record<string, string>;

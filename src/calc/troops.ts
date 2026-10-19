@@ -60,23 +60,44 @@ const ALL = [true, true, true, true];
 
 /**
  * Largest troop mix that keeps the rows' ratio, from total resources after
- * other costs, limited per resource by storage like `maxTroops`.
- * `tradable` marks the resources the NPC trade works with; the others come from
- * the hero, so only storage limits them, and `haveTotal` counts only tradable ones.
- * With a single row of weight 1 and everything tradable it gives exactly `maxTroops`.
+ * other costs (assuming an NPC trade), limited per resource by storage like `maxTroops`.
+ * `convert[i]` false means resource i is claimed from the hero, not traded into: it doesn't
+ * count against the total, only storage limits it. `haveTotal` is everything the village has.
+ * With a single row of weight 1 and everything convertible it gives exactly `maxTroops`.
  */
-export function maxTroopMix(rows: MixRow[], haveTotal: number, otherCost: Res4, caps: Res4, tradable: boolean[] = ALL): MixResult {
+export function maxTroopMix(rows: MixRow[], haveTotal: number, otherCost: Res4, caps: Res4, convert: boolean[] = ALL): MixResult {
   const weights = rows.map(r => r.weight), zero = rows.map(() => 0);
   if (sumOf(rows.map(r => r.weight * sumOf(r.cost))) <= 0) return { counts: zero, capLimited: -1 };
-  const perBatch = sumOf(rows.map(r => r.weight * sumOf(r.cost.filter((_, i) => tradable[i]))));
+  const perBatch = sumOf(rows.map(r => r.weight * sumOf(r.cost.filter((_, i) => convert[i]))));
   let counts: number[] | null = null, n = Infinity, capLimited = -1;
   if (perBatch > 0) {
-    counts = countsAt(weights, haveTotal - sumOf(otherCost.filter((_, i) => tradable[i])), perBatch);
+    counts = countsAt(weights, haveTotal - sumOf(otherCost.filter((_, i) => convert[i])), perBatch);
     n = sumOf(counts);
   }
   for (let i = 0; i < 4; i++) {
     const perRes = sumOf(rows.map(r => r.weight * r.cost[i]));
     if (perRes > 0 && caps[i] !== Infinity && otherCost[i] <= caps[i]) {
+      const c = countsAt(weights, caps[i] - otherCost[i], perRes), m = sumOf(c);
+      if (m < n) { n = m; counts = c; capLimited = i; }
+    }
+  }
+  return { counts: counts ?? zero, capLimited };
+}
+
+/**
+ * Largest troop mix that keeps the rows' ratio without trading: each resource limits on its own.
+ * Resources claimed from the hero (`convert[i]` false) are limited only by storage.
+ */
+export function maxTroopMixDirect(rows: MixRow[], have: Res4, otherCost: Res4, caps: Res4, convert: boolean[] = ALL): MixResult {
+  const weights = rows.map(r => r.weight), zero = rows.map(() => 0);
+  let counts: number[] | null = null, n = Infinity, capLimited = -1;
+  for (let i = 0; i < 4; i++) {
+    const perRes = sumOf(rows.map(r => r.weight * r.cost[i]));
+    if (perRes <= 0) continue;
+    if (convert[i]) {
+      const c = countsAt(weights, have[i] - otherCost[i], perRes), m = sumOf(c);
+      if (m < n) { n = m; counts = c; capLimited = -1; }
+    } else if (caps[i] !== Infinity && otherCost[i] <= caps[i]) {
       const c = countsAt(weights, caps[i] - otherCost[i], perRes), m = sumOf(c);
       if (m < n) { n = m; counts = c; capLimited = i; }
     }
@@ -101,14 +122,16 @@ export interface PlanRow {
 
 /**
  * Units per row when each row has its own mode. "count" and "time" rows are fixed
- * and paid first, together with `otherCost`; the "max" rows share what is left by weight.
+ * and paid first, together with `otherCost`; the "max" rows share what is left by weight,
+ * with an NPC trade (`trade`) or without one.
  */
-export function planTroops(rows: PlanRow[], haveTotal: number, otherCost: Res4, caps: Res4, tradable: boolean[] = ALL): MixResult {
+export function planTroops(rows: PlanRow[], have: Res4, otherCost: Res4, caps: Res4, convert: boolean[] = ALL, trade = true): MixResult {
   const counts = rows.map(r => r.mode === "count" ? r.count : r.mode === "time" ? troopsForTime(r.seconds, r.perUnit) : 0);
   const fixed = [0, 1, 2, 3].map(i => otherCost[i] + sumOf(rows.map((r, k) => r.cost[i] * counts[k]))) as Res4;
   const maxIdx = rows.flatMap((r, k) => r.mode === "max" ? [k] : []);
   if (!maxIdx.length) return { counts, capLimited: -1 };
-  const mix = maxTroopMix(maxIdx.map(k => ({ cost: rows[k].cost, weight: rows[k].weight })), haveTotal, fixed, caps, tradable);
+  const mixRows = maxIdx.map(k => ({ cost: rows[k].cost, weight: rows[k].weight }));
+  const mix = trade ? maxTroopMix(mixRows, sumOf(have), fixed, caps, convert) : maxTroopMixDirect(mixRows, have, fixed, caps, convert);
   maxIdx.forEach((k, j) => counts[k] = mix.counts[j]);
   return { counts, capLimited: mix.capLimited };
 }

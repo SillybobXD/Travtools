@@ -3,6 +3,7 @@ import unitsJson from "./units.json";
 import buildingsJson from "./buildings.json";
 import merchantsJson from "./merchants.json";
 import celebrationsJson from "./celebrations.json";
+import capacityJson from "./capacity.json";
 
 /* JSON shapes are checked in data.test.ts. */
 /** Units per tribe. Order matters: saved state stores the unit index. */
@@ -11,4 +12,6 @@ export const UNITS = unitsJson as unknown as Record<string, Unit[]>;
 export const BUILDINGS = buildingsJson as unknown as Building[];
 export const MERCH = merchantsJson as Record<string, Merchant>;
 /** Small, then great. Order matters: saved state stores counts by index. */
+/** Warehouse or granary capacity by level; index 0 is a village without one. */
+export const CAPACITY: number[] = capacityJson;
 export const CELEBRATIONS = celebrationsJson as unknown as Celebration[];
