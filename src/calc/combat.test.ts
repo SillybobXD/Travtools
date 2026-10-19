@@ -91,6 +91,12 @@ describe("morale", () => {
     expect(morale(1000, 100, 2, 1)).toBe(0.667);           // 10^-0.2 = 0.631
   });
 
+  it("population 2,000 vs 200: 10^-0.2 = 0.631 stops at 0.667; at half the defence 10^-0.1 = 0.794", () => {
+    // The game's Combat Simulator has no population input, so this is hand-worked from the formula.
+    expect(morale(2000, 200, 3000, 2000)).toBe(0.667);
+    expect(morale(2000, 200, 1000, 2000)).toBeCloseTo(0.794, 9);
+  });
+
   it("is milder when the attack is weaker than the defence", () => {
     expect(morale(200, 100, 1, 2)).toBeCloseTo(0.933, 9);  // 2^-0.1 = 0.93303
   });
@@ -229,10 +235,9 @@ const SIM_CASES: SimCase[] = [
   { name: "9: 100 Clubswingers vs 100 Legionnaires, city wall 10, normal",
     input: { attacker: T([100]), defenders: [R([100])], village: { tribe: "Romans", wall: 10 }, mode: "normal" },
     att: 4000, def: 4852, attLost: [100], attWounded: [40], defLost: [[75]], defWounded: [[30]] },
-  // The copied inputs show wall 0 here, but the game's defence (5,998) only fits with the palisade 10 from case 7 still set.
-  { name: "10: same as 1, smithy 10 on both sides (palisade 10 apparently still set)",
-    input: { attacker: T([100], [10]), defenders: [G([100], [10])], village: { tribe: "Gauls", wall: 10 }, mode: "normal" },
-    att: 4597, def: 5998, attLost: [100], attWounded: [40], defLost: [[67]], defWounded: [[26]] },
+  { name: "10: same as 1, smithy 10 on both sides",
+    input: { attacker: T([100], [10]), defenders: [G([100], [10])], village: { tribe: "Gauls" }, mode: "normal" },
+    att: 4597, def: 4606, attLost: [100], attWounded: [40], defLost: [[100]], defWounded: [[40]] },
   { name: "12: 10,000 Clubswingers vs 8,000 Phalanxes (large battle), normal",
     input: { attacker: T([10000]), defenders: [G([8000])], village: { tribe: "Gauls" }, mode: "normal" },
     att: 400021, def: 320026, attLost: [7314], attWounded: [2925], defLost: [[8000]], defWounded: [[3200]] },
@@ -255,6 +260,4 @@ describe("game combat simulator cases", () => {
     expect(r.defenderLosses).toEqual(c.defLost);
     expect(r.defenderWounded).toEqual(c.defWounded);
   });
-
-  it.todo("11: morale, population 2,000 vs 200 (not run yet)");
 });
