@@ -55,6 +55,14 @@
       <div><label for="x">Map X</label><input id="x" autocomplete="off" placeholder="e.g. 12"></div>
       <div><label for="y">Map Y</label><input id="y" autocomplete="off" placeholder="e.g. -34"></div>
     </div>
+    <h3>Production per hour</h3>
+    <div class="grid4">
+      <div class="res" style="--c: var(--wood)"><label for="prod0"><svg class="ico" aria-hidden="true"><use href="#i-wood"></use></svg>Wood/h</label><input id="prod0" autocomplete="off"></div>
+      <div class="res" style="--c: var(--clay)"><label for="prod1"><svg class="ico" aria-hidden="true"><use href="#i-clay"></use></svg>Clay/h</label><input id="prod1" autocomplete="off"></div>
+      <div class="res" style="--c: var(--iron)"><label for="prod2"><svg class="ico" aria-hidden="true"><use href="#i-iron"></use></svg>Iron/h</label><input id="prod2" autocomplete="off"></div>
+      <div class="res" style="--c: var(--crop)"><label for="prod3"><svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg>Crop/h</label><input id="prod3" autocomplete="off"></div>
+    </div>
+    <p class="hint" id="fillNote"></p>
   </section>
 
   <details id="importBox">
@@ -95,6 +103,7 @@
   <section class="plan-card" aria-live="polite">
     <h2><svg class="ico" aria-hidden="true"><use href="#i-plan"></use></svg>Plan</h2>
     <p class="verdict" id="verdict"></p>
+    <p class="hint afford" id="affordNote"></p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Resource</th><th>Have</th><th>Needed</th><th id="lastHead">Set NPC to</th></tr></thead>

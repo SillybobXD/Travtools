@@ -38,6 +38,8 @@ export interface VillageState {
    * resources and its need is claimed from the hero. (Named `hero` since older saves.)
    */
   hero?: boolean[];
+  /** When the resource, storage and production numbers were last entered or imported (ms). */
+  resAt?: number;
   /** Whether “Max possible” counts on an NPC trade. Missing means yes. */
   useTrade?: boolean;
   /** Saved village the resources are sent from, if any. */

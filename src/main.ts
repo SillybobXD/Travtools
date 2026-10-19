@@ -1,11 +1,12 @@
 import type { Res4, TrainingBuilding, Unit } from "./types";
 import { BUILDINGS, CAPACITY, CELEBRATIONS, MERCH, UNITS } from "./data";
-import { fmt, fmtTime, toNum } from "./calc/format";
+import { fmt, fmtTime, toNum, toSignedNum } from "./calc/format";
 import { buildingTotals } from "./calc/buildings";
 import { celebrationCost } from "./calc/celebrations";
 import { mixDuration, planTroops, trainingTime, type TroopMode } from "./calc/troops";
 import { npcTargets, planNeeds, storageCaps } from "./calc/npc";
 import { mapDistance, merchantsNeeded, travelSeconds } from "./calc/merchants";
+import { timeToAffordDirect, timeToAffordTrade, timeToEmpty, timeToFull } from "./calc/timing";
 import { parseOverview, type OverviewImport } from "./parse/overview";
 import { loadStore, newId, newTroop, newVillage, normalizeTroops, saveStore, type Store, type TroopRow, type VillageState } from "./storage";
 
@@ -18,7 +19,9 @@ const ICONS = ["wood", "clay", "iron", "crop"];
 const icon = (name: string) => `<svg class="ico" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 const RES = [0, 1, 2, 3] as const;
 /** Plain inputs saved per village as typed. */
-const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "x", "y", "dist", "merchCap", "merchSpeed"];
+const FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "x", "y", "dist", "merchCap", "merchSpeed", "prod0", "prod1", "prod2", "prod3"];
+/** Fields whose change means the village numbers are fresh as of now. */
+const STOCK_FIELDS = ["have0", "have1", "have2", "have3", "wh", "gr", "prod0", "prod1", "prod2", "prod3"];
 const MODES: [TroopMode, string][] = [["max", "Max possible"], ["count", "Set number"], ["time", "Fill a time"]];
 const $ = <T extends HTMLElement = HTMLInputElement>(id: string) => document.getElementById(id) as T;
 const num = (id: string) => toNum($(id).value);
@@ -28,6 +31,12 @@ const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;
 const coord = (s: string | undefined) => { const t = String(s ?? "").trim().replace("−", "-"); return /^-?\d+$/.test(t) ? parseInt(t, 10) : null; };
 const coordsOf = (x: string | undefined, y: string | undefined) => { const a = coord(x), b = coord(y); return a === null || b === null ? null : { x: a, y: b }; };
 const joinAnd = (a: string[]) => a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`;
+/** A clock time like "21:50", "tomorrow 03:10" or "Wed 14:00". */
+function clock(at: number) {
+  const d = new Date(at), t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((new Date(at).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  return days === 0 ? t : days === 1 ? `tomorrow ${t}` : `${d.toLocaleDateString([], { weekday: "short" })} ${t}`;
+}
 /** Blank or invalid ratio counts as 1; 0 leaves the row out. */
 const ratio = (s: string) => { const n = parseFloat(String(s).replace(",", ".")); return isFinite(n) && n >= 0 ? n : 1; };
 
@@ -122,6 +131,7 @@ function fillStorage() {
       const input = $(id);
       if (sel.value === "custom") { input.hidden = false; input.focus(); }
       else { input.value = sel.value === "" ? "" : String(CAPACITY[+sel.value]); input.hidden = true; }
+      v.resAt = Date.now();
       calc();
     });
   }
@@ -189,6 +199,7 @@ function applyImport() {
     const c = importCoords[row.name];
     if (c) { target.fields.x = String(c.x); target.fields.y = String(c.y); }
     row.res?.forEach((x, k) => target.fields["have" + k] = String(x));
+    if (row.res) target.resAt = Date.now();
     if (row.wh != null) { target.fields.wh = String(row.wh); target.fields.gr = String(row.gr); storage++; }
     if (row.active) activeId = id;
   });
@@ -364,6 +375,34 @@ function calc() {
   else verdict = `You're ${fmt(needSum - haveTotal)} resources short, even after trading.` + heroTxt;
   $("verdict").textContent = verdict;
 
+  /* timing */
+  const perHour = res4(i => toSignedNum($("prod" + i).value));
+  const hasProd = perHour.some(p => p !== 0);
+  /** "in 1:20:00 (21:50)" counted from when the numbers were entered, or null for never. */
+  const when = (secs: number) => {
+    if (secs === Infinity) return null;
+    const at = (v.resAt ?? Date.now()) + secs * 1000, left = (at - Date.now()) / 1000;
+    return left <= 0 ? `now (since ${clock(at)})` : `in ${fmtTime(left)} (${clock(at)})`;
+  };
+  const fill: string[] = [];
+  if (hasProd) {
+    const full = timeToFull(have, perHour, caps);
+    const first = [0, 1, 2].reduce((a, b) => full[b] < full[a] ? b : a);
+    if (full[first] < Infinity) fill.push(`Warehouse full ${when(full[first])}, ${NAMES[first].toLowerCase()} first.`);
+    if (full[3] < Infinity) fill.push(`Granary full ${when(full[3])}.`);
+    const empty = timeToEmpty(have[3], perHour[3]);
+    if (empty < Infinity) fill.push(`<span class="warn">Crop runs out ${when(empty)}.</span>`);
+    if (!fill.length) fill.push("Add warehouse and granary capacity to see when storage fills up.");
+  } else fill.push("Add production to see when storage fills up and when you can afford the plan.");
+  $("fillNote").innerHTML = fill.join(" ");
+  let afford = "";
+  if (hasProd && needAll > 0 && !coveredDirect) {
+    const enough = (secs: number) => { const w = when(secs); return w ? `enough ${w}` : "not with this production and storage"; };
+    afford = `<strong>Without trading:</strong> ${enough(timeToAffordDirect(have, need, perHour, caps, convert))}. ` +
+      `<strong>With an NPC trade:</strong> ${coveredNpc ? "now" : enough(timeToAffordTrade(have, need, perHour, caps, convert))}.`;
+  }
+  $("affordNote").innerHTML = afford;
+
   /* NPC targets */
   const prefSel = $<HTMLSelectElement>("pref");
   [...prefSel.options].forEach(o => o.disabled = !convert[+o.value]);
@@ -487,6 +526,7 @@ CELEBRATIONS.forEach((_, i) => $("celeb" + i).addEventListener("input", e => { v
 statSel.addEventListener("change", showStats);
 $("resetUnit").addEventListener("click", () => { delete store.overrides[v.tribe]?.[statSel.value]; showStats(); calc(); });
 RES.forEach(i => $("hero" + i).addEventListener("change", e => { v.hero![i] = (e.target as HTMLInputElement).checked; calc(); }));
+STOCK_FIELDS.forEach(f => $(f).addEventListener("input", () => { v.resAt = Date.now(); }, { capture: true }));
 $("useTrade").addEventListener("change", e => { v.useTrade = (e.target as HTMLInputElement).checked; calc(); });
 $("sendFrom").addEventListener("change", e => { v.sendFrom = (e.target as HTMLSelectElement).value; calc(); });
 

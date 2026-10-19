@@ -6,6 +6,13 @@ export const toNum = (v: unknown): number => {
   return isNaN(n) ? 0 : n;
 };
 
+/** Like `toNum`, but keeps a leading minus (or the game's "−"), e.g. for negative crop production. */
+export const toSignedNum = (v: unknown): number => {
+  const s = String(v ?? "").trim().replace("−", "-");
+  const n = toNum(s);
+  return /^-/.test(s) ? -n : n;
+};
+
 /** Seconds to "h:mm:ss", with a "Nd " prefix past a day. */
 export function fmtTime(s: number): string {
   if (!isFinite(s) || s <= 0) return "0:00:00";

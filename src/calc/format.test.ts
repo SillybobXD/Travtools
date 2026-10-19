@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmt, fmtTime, toNum } from "./format";
+import { fmt, fmtTime, toNum, toSignedNum } from "./format";
 
 describe("toNum", () => {
   it("strips separators and junk", () => {
@@ -12,6 +12,15 @@ describe("toNum", () => {
     expect(toNum("")).toBe(0);
     expect(toNum("abc")).toBe(0);
     expect(toNum(undefined)).toBe(0);
+  });
+});
+
+describe("toSignedNum", () => {
+  it("keeps the sign", () => {
+    expect(toSignedNum("-1,234")).toBe(-1234);
+    expect(toSignedNum("−120")).toBe(-120);
+    expect(toSignedNum("2,177")).toBe(2177);
+    expect(toSignedNum("")).toBe(0);
   });
 });
 

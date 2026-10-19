@@ -122,3 +122,6 @@ h2 .ico, h3 .ico, summary .ico { color: var(--muted); }
 label.check .ico { margin-right: 0; }
 label.check.plain { color: var(--ink); font-weight: 500; }
 td .ico { width: 1em; height: 1em; margin-right: 0.2em; }
+
+/* Timing */
+.afford { margin: -4px 0 12px; }

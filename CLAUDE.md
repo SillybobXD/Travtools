@@ -27,7 +27,8 @@ src/
     celebrations.ts     celebrationCost
     npc.ts              storageCaps, planNeeds, npcTargets
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
-    format.ts           fmt, fmtTime, toNum
+    timing.ts           timeToAffordDirect, timeToAffordTrade, timeToFull, timeToEmpty
+    format.ts           fmt, fmtTime, toNum, toSignedNum
     *.test.ts           Vitest tests next to each module
 .github/workflows/deploy.yml   test, build and deploy to GitHub Pages on push to main
 ```
@@ -67,6 +68,10 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Celebrations: fixed cost per celebration (small 6,400 / 6,650 / 5,940 / 1,340, great 29,700 / 33,250 / 32,000 / 6,700).
 - NPC leftover goes to the preferred resource first, then crop, wood, clay, iron, within capacity.
 - Merchant travel time: `distance / (merchantSpeed * serverSpeed)`.
+- Production per hour is entered per village (crop may be negative). Storage fills at `(cap - have) / production`; negative crop runs out at `have / -production`.
+- Time to afford the plan without trading: the slowest missing resource, `(need - have) / production`; never if it isn't produced or doesn't fit in storage. Resources not to convert into are claimed from the hero and don't wait.
+- Time to afford with an NPC trade: when the village's total reaches the need of the convertible resources. Each resource grows within its storage (production stops when full) and negative crop stops at 0, so the total is piecewise linear; `timeToAffordTrade` solves it exactly per stretch.
+- Times count from `resAt`, when the resource, storage or production numbers were last typed or imported, and show as a clock time.
 - Distance between saved villages: straight line on a 401 × 401 map (-200..200) that wraps at the edges (`mapDistance`). Filled in automatically when both villages have coordinates.
 
 ## Known gaps / unverified data
