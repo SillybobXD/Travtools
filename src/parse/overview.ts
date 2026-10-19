@@ -2,10 +2,15 @@ import type { Res4 } from "../types";
 
 /** What a paste of the game's village overview page contains. */
 export interface OverviewImport {
-  /** The active village's top bar: resources and storage. Null if not found. */
-  stock: { res: Res4; warehouse: number; granary: number } | null;
-  /** Rows of the overview's Resources tab, without the sum row. */
+  /**
+   * The active village's top bar: resources and storage, and the crop balance (crop per hour
+   * after upkeep) when the bar shows it. Null if not found.
+   */
+  stock: { res: Res4; warehouse: number; granary: number; cropBalance?: number } | null;
+  /** Rows of the overview's Resources tab (they have a merchants column), without the sum row. */
   villages: { name: string; res: Res4 }[];
+  /** Rows of the overview's Production tab (no merchants column), per hour, without the sum row. */
+  production: { name: string; perHour: Res4 }[];
   /** Rows of the overview's Capacity tab, without the sum row. */
   capacities: { name: string; warehouse: number; granary: number }[];
   /** Which table row is the active village, if it could be told. */
@@ -21,7 +26,11 @@ const NUM = String.raw`\d{1,3}(?:[.,'\u202f]?\d{3})*`;
 const NUM_LINE = new RegExp(`^[-−]?${NUM}$`);
 /** `(12|34)`, optionally after the village name on the same line. */
 const COORD = /^(.*?)\s*\(\s*([-−]?\d+)\s*\|\s*([-−]?\d+)\s*\)$/;
-const ROW = new RegExp(String.raw`^(.*?\S)\s+(${NUM})\s+(${NUM})\s+(${NUM})\s+(${NUM})(?:\s+\d+\s*/\s*\d+)?$`);
+/** Resources tab: name, wood, clay, iron, crop, merchants "free/total". */
+const ROW = new RegExp(String.raw`^(.*?\S)\s+(${NUM})\s+(${NUM})\s+(${NUM})\s+(${NUM})\s+\d+\s*/\s*\d+$`);
+/** Production tab: name and four per-hour numbers (crop can be negative), no merchants. */
+const SNUM = `[-−]?${NUM}`;
+const PROD_ROW = new RegExp(String.raw`^(.*?\S)\s+(${SNUM})\s+(${SNUM})\s+(${SNUM})\s+(${SNUM})$`);
 /** Capacity tab: name, warehouse, granary. */
 const CAP_ROW = new RegExp(String.raw`^(.*?\S)\s+(${NUM})\s+(${NUM})$`);
 
@@ -42,7 +51,7 @@ function findStock(lines: string[]): OverviewImport["stock"] {
     for (let s = r.length - 6; s >= 0; s--) {
       const [wh, w, c, i, gr, crop] = r.slice(s, s + 6);
       if (wh > 0 && gr > 0 && w >= 0 && c >= 0 && i >= 0 && crop >= 0 && Math.max(w, c, i) <= wh && crop <= gr)
-        return { res: [w, c, i, crop], warehouse: wh, granary: gr };
+        return { res: [w, c, i, crop], warehouse: wh, granary: gr, ...(s + 6 < r.length ? { cropBalance: r[s + 6] } : {}) };
     }
   }
   return null;
@@ -56,8 +65,13 @@ export function parseOverview(text: string): OverviewImport {
     const m = ROW.exec(l);
     return m && !NUM_LINE.test(m[1]) ? [{ name: m[1], res: [m[2], m[3], m[4], m[5]].map(toInt) as Res4 }] : [];
   }), r => r.res);
+  const production = dropSumRow(lines.flatMap(l => {
+    const m = PROD_ROW.exec(l);
+    return m && !NUM_LINE.test(m[1]) ? [{ name: m[1], perHour: [m[2], m[3], m[4], m[5]].map(toInt) as Res4 }] : [];
+  }), r => r.perHour);
   const capacities = dropSumRow(lines.flatMap(l => {
-    const m = CAP_ROW.exec(l);
+    // A row with four numbers would also match name + two numbers; it belongs to another tab.
+    const m = !ROW.test(l) && !PROD_ROW.test(l) && CAP_ROW.exec(l);
     return m && !NUM_LINE.test(m[1]) ? [{ name: m[1], warehouse: toInt(m[2]), granary: toInt(m[3]) }] : [];
   }), r => [r.warehouse, r.granary]);
 
@@ -68,7 +82,7 @@ export function parseOverview(text: string): OverviewImport {
     if (m && name) coords[name] = { x: toInt(m[2]), y: toInt(m[3]) };
   });
 
-  return { stock, villages, capacities, activeName: findActive(lines, stock, villages, capacities), coords };
+  return { stock, villages, production, capacities, activeName: findActive(lines, stock, villages, [...capacities, ...production], capacities), coords };
 }
 
 /** The last row is the sum of the others; its label depends on the game's language. */
@@ -82,7 +96,7 @@ function dropSumRow<T>(rows: T[], values: (r: T) => number[]): T[] {
  * The Resources row closest to the top bar, or the only Capacity row with the top bar's
  * warehouse and granary, or failing that the line before "Population".
  */
-function findActive(lines: string[], stock: OverviewImport["stock"], villages: OverviewImport["villages"], capacities: OverviewImport["capacities"]): string | null {
+function findActive(lines: string[], stock: OverviewImport["stock"], villages: OverviewImport["villages"], others: { name: string }[], capacities: OverviewImport["capacities"]): string | null {
   if (stock && villages.length) {
     const diffs = villages.map(v => sum(v.res.map((x, k) => Math.abs(x - stock.res[k]))));
     const best = Math.min(...diffs);
@@ -94,6 +108,6 @@ function findActive(lines: string[], stock: OverviewImport["stock"], villages: O
     if (same.length === 1) return same[0].name;
   }
   const p = lines.findIndex(l => /^population\b/i.test(l));
-  if (p > 0 && [...villages, ...capacities].some(v => v.name === lines[p - 1])) return lines[p - 1];
+  if (p > 0 && [...villages, ...others].some(v => v.name === lines[p - 1])) return lines[p - 1];
   return null;
 }

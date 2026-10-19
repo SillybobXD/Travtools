@@ -62,7 +62,7 @@ describe("parseOverview", () => {
   const r = parseOverview(SAMPLE);
 
   it("reads the top bar, skipping the two leading numbers", () => {
-    expect(r.stock).toEqual({ res: [5596, 4398, 3637, 2966], warehouse: 21400, granary: 31300 });
+    expect(r.stock).toEqual({ res: [5596, 4398, 3637, 2966], warehouse: 21400, granary: 31300, cropBalance: 2177 });
   });
 
   it("reads every village row, names with spaces included, and drops the sum row", () => {
@@ -82,21 +82,22 @@ describe("parseOverview", () => {
     expect(r.activeName).toBe("Northgate");
   });
 
-  it("handles tabs, other separators and a desktop copy without merchants", () => {
-    const t = parseOverview("Dorf A\t12.345\t1'234\t0\t9\u202f999\nDorf B\t1\t2\t3\t4\nSumme\t12.346\t1236\t3\t10003");
+  it("handles tabs and other thousands separators", () => {
+    const t = parseOverview("Dorf A\t12.345\t1'234\t0\t9\u202f999\t3/5\nDorf B\t1\t2\t3\t4\t0/0\nSumme\t12.346\t1236\t3\t10003\t3/5");
     expect(t.villages).toEqual([{ name: "Dorf A", res: [12345, 1234, 0, 9999] }, { name: "Dorf B", res: [1, 2, 3, 4] }]);
+    expect(t.production).toEqual([]);
     expect(t.stock).toBeNull();
     expect(t.activeName).toBeNull();
   });
 
   it("reads the top bar alone when the table is missing", () => {
     const t = parseOverview([1000, 900, 800, 700, 1200, 1100, -50].map(v => n(String(v))).join("\n"));
-    expect(t.stock).toEqual({ res: [900, 800, 700, 1100], warehouse: 1000, granary: 1200 });
+    expect(t.stock).toEqual({ res: [900, 800, 700, 1100], warehouse: 1000, granary: 1200, cropBalance: -50 });
     expect(t.villages).toEqual([]);
   });
 
   it("finds nothing in unrelated text", () => {
-    expect(parseOverview("hello\nworld")).toEqual({ stock: null, villages: [], capacities: [], activeName: null, coords: {} });
+    expect(parseOverview("hello\nworld")).toEqual({ stock: null, villages: [], production: [], capacities: [], activeName: null, coords: {} });
   });
 
   it("falls back to the line before Population when the top bar doesn't match a row", () => {
@@ -154,7 +155,7 @@ describe("parseOverview on the Capacity tab", () => {
   });
 
   it("still reads the top bar for the village you're in", () => {
-    expect(r.stock).toEqual({ res: [6621, 5129, 4120, 2988], warehouse: 21400, granary: 31300 });
+    expect(r.stock).toEqual({ res: [6621, 5129, 4120, 2988], warehouse: 21400, granary: 31300, cropBalance: 2177 });
   });
 
   it("finds the active village by its storage", () => {
@@ -168,5 +169,66 @@ describe("parseOverview on the Capacity tab", () => {
 
   it("doesn't read capacity rows from the Resources tab", () => {
     expect(parseOverview(SAMPLE).capacities).toEqual([]);
+  });
+});
+
+/** The Production tab, shaped like a real phone copy (tab-separated, sum row glued to its total), names changed. */
+const PRODUCTION = `${n("754")}
+${n("374")}
+${n("6,300")}
+${n("1,162")}
+${n("904")}
+${n("844")}
+${n("3,100")}
+${n("145")}
+${n("30")}
+Switch to avatar for sitting
+Info box
+\u202d${n("1")}×\u202c
+Village overview
+Production
+  \t
+Capacity
+
+Village\t\t\t\t
+Northgate\t${n("1,750")}\t${n("2,100")}\t${n("2,589")}\t${n("2,893")}
+Eastmoor\t${n("26")}\t${n("39")}\t${n("26")}\t${n("3,472")}
+South Hill\t${n("1,750")}\t${n("1,750")}\t${n("1,313")}\t${n("1,583")}
+Westwood\t${n("665")}\t${n("490")}\t${n("333")}\t${n("80")}
+Sum:${n("20,859")}\t${n("4,191")}\t${n("4,379")}\t${n("4,261")}\t${n("8,028")}
+
+PlayerOne
+Westwood
+Population: ${n("169")}`;
+
+describe("parseOverview on the Production tab", () => {
+  const r = parseOverview(PRODUCTION);
+
+  it("reads production per village and drops the sum row", () => {
+    expect(r.production).toEqual([
+      { name: "Northgate", perHour: [1750, 2100, 2589, 2893] },
+      { name: "Eastmoor", perHour: [26, 39, 26, 3472] },
+      { name: "South Hill", perHour: [1750, 1750, 1313, 1583] },
+      { name: "Westwood", perHour: [665, 490, 333, 80] },
+    ]);
+    expect(r.villages).toEqual([]);
+    expect(r.capacities).toEqual([]);
+  });
+
+  it("reads the top bar with its crop balance", () => {
+    expect(r.stock).toEqual({ res: [1162, 904, 844, 145], warehouse: 6300, granary: 3100, cropBalance: 30 });
+  });
+
+  it("finds the active village from the line before Population", () => {
+    expect(r.activeName).toBe("Westwood");
+  });
+
+  it("accepts negative crop production", () => {
+    const t = parseOverview(`A\t10\t20\t30\t${n("−120")}\nB\t1\t2\t3\t4\nSum\t11\t22\t33\t-116`);
+    expect(t.production).toEqual([{ name: "A", perHour: [10, 20, 30, -120] }, { name: "B", perHour: [1, 2, 3, 4] }]);
+  });
+
+  it("doesn't read Resources rows as production", () => {
+    expect(parseOverview(SAMPLE).production).toEqual([]);
   });
 });

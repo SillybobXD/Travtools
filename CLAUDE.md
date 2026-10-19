@@ -85,11 +85,11 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
 
 ## Import from the game
-The user copies the whole Village overview page, Resources tab and/or Capacity tab, and pastes it into “Import from the game” (one tab per paste). `parseOverview`:
+The user copies the whole Village overview page (Resources, Production or Capacity tab) and pastes it into “Import from the game”, one tab per paste. `parseOverview`:
 - strips the direction marks (U+202A–202E, U+2066–2069) the game puts around every number;
-- finds the top bar as a run of number-only lines: warehouse, wood, clay, iron, granary, crop (gold/silver before it are skipped);
-- reads Resources rows as `name, wood, clay, iron, crop[, merchants a/b]` and Capacity rows as `name, warehouse, granary`, and drops the last row of each if it is the sum of the others;
+- finds the top bar as a run of number-only lines: warehouse, wood, clay, iron, granary, crop, then the crop balance (crop per hour after upkeep) if present; gold/silver before it are skipped;
+- reads Resources rows as `name, wood, clay, iron, crop, merchants a/b`, Production rows as `name` plus four per-hour numbers with no merchants column (crop may be negative), and Capacity rows as `name, warehouse, granary`, and drops the last row of each if it is the sum of the others (on the Production tab the sum row's label has the grand total glued to it, e.g. `Sum:20,859`);
 - picks the active village as the Resources row closest to the top bar, or the only Capacity row with the top bar's warehouse and granary, else the line before “Population”;
 - reads coordinates `(x|y)` from the village list, on their own line under the name or after it.
 
-Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one, and the saved village is renamed to its game name. Rows from both tabs are merged by name. Each village gets whatever the paste has: resources, storage, coordinates. The village you were in always gets the top bar (resources and storage, the freshest values), and the planner switches to it.
+Each row is mapped to a saved village (matched by remembered `gameName` or by name; on the first import the active row defaults to the village shown) or to a new one, and the saved village is renamed to its game name. Rows from all tabs are merged by name. Each village gets whatever the paste has: resources, production, storage, coordinates. The Production tab's crop is before troop upkeep (e.g. 2,893/h on the tab vs a 2,177/h balance), so the village you were in takes the top bar's crop balance instead; other villages take the tab's crop and are flagged `cropGross` (a note says so) unless they already have a balance, which is kept. The village you were in always gets the top bar (resources and storage, the freshest values), and the planner switches to it.

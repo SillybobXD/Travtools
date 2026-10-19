@@ -38,6 +38,8 @@ export interface VillageState {
    * resources and its need is claimed from the hero. (Named `hero` since older saves.)
    */
   hero?: boolean[];
+  /** Crop production came from the Production tab, which is before troop upkeep. */
+  cropGross?: boolean;
   /** When the resource, storage and production numbers were last entered or imported (ms). */
   resAt?: number;
   /** Whether “Max possible” counts on an NPC trade. Missing means yes. */

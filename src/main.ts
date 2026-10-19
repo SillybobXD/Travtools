@@ -138,8 +138,11 @@ function fillStorage() {
 }
 
 /* ---- import from the game ---- */
-/** One village from a paste: resources (Resources tab or top bar) and/or storage (Capacity tab or top bar). */
-interface ImportRow { name: string; res?: Res4; wh?: number; gr?: number; active: boolean }
+/**
+ * One village from a paste: resources (Resources tab or top bar), storage (Capacity tab or top bar),
+ * production (Production tab) and the crop balance after upkeep (top bar, village you were in).
+ */
+interface ImportRow { name: string; res?: Res4; wh?: number; gr?: number; prod?: Res4; cropNet?: number; active: boolean }
 let importRows: ImportRow[] = [];
 let importCoords: OverviewImport["coords"] = {};
 
@@ -153,16 +156,17 @@ function previewImport() {
   const rowFor = (name: string) => byName.get(name) ?? byName.set(name, { name, active: name === r.activeName }).get(name)!;
   r.villages.forEach(x => rowFor(x.name).res = x.res);
   r.capacities.forEach(x => Object.assign(rowFor(x.name), { wh: x.warehouse, gr: x.granary }));
+  r.production.forEach(x => rowFor(x.name).prod = x.perHour);
   importRows = [...byName.values()];
   // Top bar only (e.g. copied from another page): it belongs to the village shown here.
   if (!importRows.length && r.stock) importRows = [{ name: "", active: true }];
   // The top bar is the freshest data for the village you were in.
   const s = r.stock;
-  if (s) importRows.filter(x => x.active).forEach(x => Object.assign(x, { res: s.res, wh: s.warehouse, gr: s.granary }));
+  if (s) importRows.filter(x => x.active).forEach(x => Object.assign(x, { res: s.res, wh: s.warehouse, gr: s.granary, cropNet: s.cropBalance }));
   $("importStatus").textContent = "";
   const box = $("importPreview");
   if (!text.trim()) { box.innerHTML = ""; return; }
-  if (!importRows.length) { box.innerHTML = `<p class="hint warn">Couldn't find resources or storage in that text. Copy the whole Village overview page, Resources or Capacity tab.</p>`; return; }
+  if (!importRows.length) { box.innerHTML = `<p class="hint warn">Couldn't find resources, production or storage in that text. Copy the whole Village overview page: the Resources, Production or Capacity tab.</p>`; return; }
   const saved = Object.entries(store.villages);
   const matchOf = (row: ImportRow) => row.name ? saved.find(([, s]) => sameName(s.gameName, row.name) || sameName(s.name, row.name))?.[0] : store.current;
   const matched = new Set(importRows.map(matchOf));
@@ -176,7 +180,8 @@ function previewImport() {
     return `<div class="imp-row">
       <div><strong>${row.name ? esc(row.name) : "Village you were in"}</strong>${row.active && row.name ? ` <span class="hint">(you were here)</span>` : ""}
         ${row.res ? `<div class="cost-line">${RES.map(k => `<span style="--c:${COLORS[k]}"><b>${NAMES[k]}</b> ${fmt(row.res![k])}</span>`).join("")}</div>` : ""}
-        ${row.wh != null ? `<div class="cost-line"><span><b>Warehouse</b> ${fmt(row.wh)}</span><span><b>Granary</b> ${fmt(row.gr!)}</span></div>` : ""}</div>
+        ${row.wh != null ? `<div class="cost-line"><span><b>Warehouse</b> ${fmt(row.wh)}</span><span><b>Granary</b> ${fmt(row.gr!)}</span></div>` : ""}
+        ${row.prod ? `<div class="cost-line">${RES.map(k => `<span style="--c:${COLORS[k]}"><b>${NAMES[k]}/h</b> ${fmt(k === 3 && row.cropNet != null ? row.cropNet : row.prod![k])}</span>`).join("")}</div>` : ""}</div>
       <select data-i="${i}" aria-label="Save ${row.name ? esc(row.name) : "this village"} into">${opts}</select>
     </div>`;
   }).join("") + `</div><button type="button" class="primary gap" id="importApply">Update villages</button>`;
@@ -201,6 +206,15 @@ function applyImport() {
     row.res?.forEach((x, k) => target.fields["have" + k] = String(x));
     if (row.res) target.resAt = Date.now();
     if (row.wh != null) { target.fields.wh = String(row.wh); target.fields.gr = String(row.gr); storage++; }
+    if (row.prod) {
+      // Keep a crop balance we already have over the tab's crop before upkeep.
+      const keepCrop = target.cropGross === false && !!target.fields.prod3;
+      row.prod.forEach((x, k) => { if (k < 3 || !keepCrop) target.fields["prod" + k] = String(x); });
+      if (!keepCrop) target.cropGross = true;
+    }
+    // The top bar's crop balance is what actually reaches the granary.
+    if (row.cropNet != null) { target.fields.prod3 = String(row.cropNet); target.cropGross = false; }
+    if (row.prod || row.cropNet != null || row.wh != null) target.resAt ??= Date.now();
     if (row.active) activeId = id;
   });
   if (activeId) store.current = activeId;
@@ -393,6 +407,7 @@ function calc() {
     const empty = timeToEmpty(have[3], perHour[3]);
     if (empty < Infinity) fill.push(`<span class="warn">Crop runs out ${when(empty)}.</span>`);
     if (!fill.length) fill.push("Add warehouse and granary capacity to see when storage fills up.");
+    if (v.cropGross) fill.push("Crop/h is from the Production tab, before troop upkeep. Paste while you're in this village to use its real crop balance.");
   } else fill.push("Add production to see when storage fills up and when you can afford the plan.");
   $("fillNote").innerHTML = fill.join(" ");
   let afford = "";
@@ -526,7 +541,7 @@ CELEBRATIONS.forEach((_, i) => $("celeb" + i).addEventListener("input", e => { v
 statSel.addEventListener("change", showStats);
 $("resetUnit").addEventListener("click", () => { delete store.overrides[v.tribe]?.[statSel.value]; showStats(); calc(); });
 RES.forEach(i => $("hero" + i).addEventListener("change", e => { v.hero![i] = (e.target as HTMLInputElement).checked; calc(); }));
-STOCK_FIELDS.forEach(f => $(f).addEventListener("input", () => { v.resAt = Date.now(); }, { capture: true }));
+STOCK_FIELDS.forEach(f => $(f).addEventListener("input", () => { v.resAt = Date.now(); if (f === "prod3") v.cropGross = false; }, { capture: true }));
 $("useTrade").addEventListener("change", e => { v.useTrade = (e.target as HTMLInputElement).checked; calc(); });
 $("sendFrom").addEventListener("change", e => { v.sendFrom = (e.target as HTMLSelectElement).value; calc(); });
 
