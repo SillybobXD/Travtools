@@ -124,7 +124,7 @@ The user copies a report or the overview's Troops tab ("Own troops"), the whole 
 
 What the samples showed:
 - Wounded in real reports follow the simulator: `floor(0.4 * lost)` per unit, 0 for rams and catapults. The row is missing in some reports (a raid losing 1 unit, a raid losing all 5), so a third row is wounded only by position.
-- Rams: 67 Gaul rams (26 lost) with 1,107 Swordsmen and 1,022 Theutates Thunders and a hero, against 1,769 Roman troops plus animals: "City Wall level 20 destroyed", with combat strength 225,286 vs 116,678. A winning attack can take a level 20 wall to 0; a losing one (simulator case 14, 20 rams) did no damage. Partial damage wording ("from level A to B"?) has no sample yet.
+- Rams: 67 Gaul rams (26 lost) with 1,107 Swordsmen and 1,022 Theutates Thunders and a hero, against 1,700 Roman troops plus 41 animals: "City Wall level 20 destroyed", with combat strength 225,286 vs 116,678. A winning attack can take a level 20 wall to 0; a losing one (simulator case 14, 20 rams) did no damage. Partial damage wording ("from level A to B"?) has no sample yet.
 - Hero: the report shows only a 0/1 hero column, never its strength or items. Combat strength includes it: 930 Clubswingers + 180 Axemen with a hero show 49,370 against 48,000 from the units, so the hero added about 1,370 (smithy unknown).
 - Defence we don't model yet: an empty Teuton village defended with 373, and an occupied oasis's 55 Spearmen + 23 Paladins with 4,360 instead of about 4,234 (smithy, residence/palace or oasis bonus unknown).
 
