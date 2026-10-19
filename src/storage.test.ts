@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { migrateLegacy, newVillage, normalizeTroops } from "./storage";
+import { combatOf, migrateLegacy, newVillage, normalizeTroops, villageCombat, type Store } from "./storage";
 
 describe("migrateLegacy", () => {
   it("turns the single-village save into the first village", () => {
@@ -36,5 +36,50 @@ describe("normalizeTroops", () => {
     const before = structuredClone(v.troops);
     normalizeTroops(v);
     expect(v.troops).toEqual(before);
+  });
+});
+
+describe("combat state", () => {
+  const store = (): Store => ({ version: 2, current: "a", villages: { a: newVillage("A", "Gauls", "1"), b: newVillage("B", "Gauls", "1") }, overrides: {} });
+
+  it("older saves without combat state get defaults for the current village's tribe", () => {
+    const s = store();
+    const c = combatOf(s);
+    expect(c).toMatchObject({ side: "attack", mode: "normal", source: "optimal", objective: "fewestLosses", village: "a", wallTribe: "Gauls" });
+    expect(c.enemy).toEqual([{ tribe: "Gauls", counts: Array(10).fill("") }]);
+    expect(s.combat).toBe(c);
+  });
+
+  it("keeps saved inputs and fills in fields added later", () => {
+    const s = store();
+    s.combat = { side: "defend", enemy: [{ tribe: "Teutons", counts: ["5"] }], village: "b" } as unknown as Store["combat"];
+    const c = combatOf(s);
+    expect(c.side).toBe("defend");
+    expect(c.village).toBe("b");
+    expect(c.enemy[0].counts).toEqual(["5", "", "", "", "", "", "", "", "", ""]);
+    expect(c.home).toHaveLength(10);
+    expect(c.cap).toBe("100000");
+  });
+
+  it("falls back to the current village when the saved one was deleted", () => {
+    const s = store();
+    s.combat = { village: "gone" } as unknown as Store["combat"];
+    expect(combatOf(s).village).toBe("a");
+  });
+
+  it("gives each village blank troops and smithy levels until set, keeping what is there", () => {
+    const v = newVillage("A", "Teutons", "1");
+    expect(villageCombat(v)).toEqual({ troops: Array(10).fill(""), smithy: Array(10).fill("") });
+    v.combat!.troops[0] = "500";
+    expect(villageCombat(v).troops[0]).toBe("500");
+  });
+
+  it("survives the planner's save: the whole store is written back", () => {
+    const s = store();
+    combatOf(s).cap = "250000";
+    villageCombat(s.villages.a).troops[1] = "40";
+    const again = JSON.parse(JSON.stringify(s)) as Store;
+    expect(combatOf(again).cap).toBe("250000");
+    expect(again.villages.a.combat!.troops[1]).toBe("40");
   });
 });

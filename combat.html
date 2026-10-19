@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Combat planner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23232820'/%3E%3Cpath d='M12 3 5 6v5c0 4.6 3 8.6 7 10 4-1.4 7-5.4 7-10V6z' fill='%23e0bd45'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-wood" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5.5 3h13a3.5 3.5 0 0 1 0 7h-13a3.5 3.5 0 0 1 0-7zm13 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM5.5 14h13a3.5 3.5 0 0 1 0 7h-13a3.5 3.5 0 0 1 0-7zm13 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></symbol>
+  <symbol id="i-clay" viewBox="0 0 24 24"><path d="M2 3h9v5H2zm11 0h9v5h-9zM2 10h4v5H2zm6 0h9v5H8zm11 0h3v5h-3zM2 17h9v4H2zm11 0h9v4h-9z"/></symbol>
+  <symbol id="i-iron" viewBox="0 0 24 24"><path d="M7 4h10l2.5 6h-15zM2 21l2.5-8h15L22 21z"/></symbol>
+  <symbol id="i-crop" viewBox="0 0 24 24"><path d="M11 9h2v13h-2z"/><ellipse cx="12" cy="4.5" rx="2" ry="3"/><ellipse cx="8.6" cy="9" rx="1.8" ry="3" transform="rotate(-35 8.6 9)"/><ellipse cx="15.4" cy="9" rx="1.8" ry="3" transform="rotate(35 15.4 9)"/><ellipse cx="8.6" cy="14.5" rx="1.8" ry="3" transform="rotate(-35 8.6 14.5)"/><ellipse cx="15.4" cy="14.5" rx="1.8" ry="3" transform="rotate(35 15.4 14.5)"/></symbol>
+  <symbol id="i-village" viewBox="0 0 24 24"><path d="M12 2.5 2 11h3v10h5.5v-6h3v6H19V11h3z"/></symbol>
+  <symbol id="i-troops" viewBox="0 0 24 24"><path d="M19.5 2.5H22V5L11.4 15.6l1.8 1.8-1.4 1.4-1.6-1.6-3.4 3.4a1.5 1.5 0 0 1-2.1-2.1l3.4-3.4-1.6-1.6 1.4-1.4 1.8 1.8z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm0 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 2.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></symbol>
+  <symbol id="i-plan" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M9 2h6a1 1 0 0 1 1 1v1h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V3a1 1 0 0 1 1-1zm1 2v2h4V4zM7 10v2h10v-2zm0 4v2h7v-2z"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3zM4 18h16v3H4z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h16v2H4z"/></symbol>
+</svg>
+<main>
+  <nav class="top-nav" aria-label="Pages"><a href="./index.html">Village planner</a><a href="./combat.html" aria-current="page">Combat</a></nav>
+  <h1>Combat planner</h1>
+  <p class="lede">Find the army to send against a village or oasis, or the reinforcements that hold an incoming attack.</p>
+
+  <section>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-troops"></use></svg>Mode</h2>
+    <div class="seg-row">
+      <div class="seg" role="radiogroup" aria-label="Side">
+        <label><input type="radio" name="side" value="attack">Attack</label>
+        <label><input type="radio" name="side" value="defend">Defend</label>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Attack type">
+        <label><input type="radio" name="mode" value="normal">Normal attack</label>
+        <label><input type="radio" name="mode" value="raid">Raid</label>
+      </div>
+    </div>
+  </section>
+
+  <details id="pasteBox">
+    <summary><svg class="ico" aria-hidden="true"><use href="#i-import"></use></svg>Paste a report</summary>
+    <p class="hint" style="margin-top:0" id="pasteHint"></p>
+    <label for="reportText" class="gap">Copied report</label>
+    <textarea id="reportText" rows="4" autocomplete="off" spellcheck="false"></textarea>
+    <p class="hint" id="reportStatus"></p>
+  </details>
+
+  <section>
+    <h2 id="enemyTitle"><svg class="ico" aria-hidden="true"><use href="#i-target"></use></svg>Target</h2>
+    <div class="grid2">
+      <div><label for="wallTribe" id="wallTribeLabel">Village owner's tribe</label><select id="wallTribe"></select></div>
+      <div><label for="wall" id="wallLabel">Wall level</label><select id="wall"></select></div>
+    </div>
+    <h3 id="enemyArmyTitle">Troops there</h3>
+    <div id="enemyArmies"></div>
+    <button type="button" id="addEnemy" class="gap">Add reinforcement</button>
+    <div id="homeBox" hidden>
+      <h3>Troops at home</h3>
+      <div class="unit-grid" id="homeTroops"></div>
+      <p class="hint">Troops already in the defended village count as ours: their losses are added to the reinforcements'.</p>
+    </div>
+    <div id="lootBox" hidden>
+      <h3>Scouted resources</h3>
+      <div class="grid4">
+        <div class="res" style="--c: var(--wood)"><label for="loot0"><svg class="ico" aria-hidden="true"><use href="#i-wood"></use></svg>Wood</label><input id="loot0" data-loot="0" inputmode="numeric" autocomplete="off"></div>
+        <div class="res" style="--c: var(--clay)"><label for="loot1"><svg class="ico" aria-hidden="true"><use href="#i-clay"></use></svg>Clay</label><input id="loot1" data-loot="1" inputmode="numeric" autocomplete="off"></div>
+        <div class="res" style="--c: var(--iron)"><label for="loot2"><svg class="ico" aria-hidden="true"><use href="#i-iron"></use></svg>Iron</label><input id="loot2" data-loot="2" inputmode="numeric" autocomplete="off"></div>
+        <div class="res" style="--c: var(--crop)"><label for="loot3"><svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg>Crop</label><input id="loot3" data-loot="3" inputmode="numeric" autocomplete="off"></div>
+      </div>
+      <div class="grid2 gap"><div><label for="cranny">Cranny capacity</label><input id="cranny" inputmode="numeric" autocomplete="off"></div></div>
+      <p class="hint">Blank means unknown: loot then counts everything the survivors can carry.</p>
+    </div>
+    <div class="grid2 gap">
+      <div><label for="tx" id="txLabel">Target X</label><input id="tx" autocomplete="off" placeholder="e.g. 12"></div>
+      <div><label for="ty" id="tyLabel">Target Y</label><input id="ty" autocomplete="off" placeholder="e.g. -34"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-village"></use></svg>Your troops</h2>
+    <div><label for="village" id="villageLabel">From village</label><select id="village"></select></div>
+    <div class="seg gap" role="radiogroup" aria-label="Troops">
+      <label><input type="radio" name="source" value="owned">Troops I own</label>
+      <label><input type="radio" name="source" value="optimal">Any troops, up to a cap</label>
+    </div>
+    <div id="ownedBox">
+      <h3>Troops in this village</h3>
+      <div class="unit-grid" id="ownTroops"></div>
+    </div>
+    <div id="optimalBox">
+      <div class="grid2 gap"><div><label for="cap">Resource cap (all four together)</label><input id="cap" inputmode="numeric" autocomplete="off"></div></div>
+      <p class="hint">Any of the units below, as long as the army costs no more than this.</p>
+    </div>
+    <h3>Units to use</h3>
+    <div class="checks" id="allowed"></div>
+    <p class="hint">Scouts, rams, catapults, chiefs and settlers are left out: rams and wall damage aren't modelled yet.</p>
+    <h3>Smithy levels</h3>
+    <div class="unit-grid" id="smithy"></div>
+    <details class="gap" id="troopPasteBox">
+      <summary><svg class="ico" aria-hidden="true"><use href="#i-import"></use></svg>Paste the Troops or Smithy tab</summary>
+      <p class="hint" style="margin-top:0">In the game, open Village overview, then Troops (Own troops) or Smithy. Select all, copy, and paste it here. Each row goes to the saved village of the same name.</p>
+      <label for="troopText" class="gap">Copied page</label>
+      <textarea id="troopText" rows="3" autocomplete="off" spellcheck="false"></textarea>
+      <p class="hint" id="troopStatus"></p>
+    </details>
+  </section>
+
+  <section>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-list"></use></svg>Optimize for</h2>
+    <select id="objective" aria-label="Optimize for"></select>
+    <label class="check plain gap"><input type="checkbox" id="wounded"> Count wounded troops as recoverable</label>
+    <p class="hint">Wounded can be healed in a hospital, but real reports show fewer wounded than the 40% the simulator lists when the hospital is full.</p>
+    <details class="gap" id="moraleBox">
+      <summary>Population (morale)</summary>
+      <div class="grid2">
+        <div><label for="ownPop" id="ownPopLabel">Your population</label><input id="ownPop" inputmode="numeric" autocomplete="off"></div>
+        <div><label for="enemyPop" id="enemyPopLabel">Their population</label><input id="enemyPop" inputmode="numeric" autocomplete="off"></div>
+      </div>
+      <p class="hint">Morale weakens an attacker with more population. Leave blank to ignore it. The formula isn't verified against the game yet.</p>
+    </details>
+  </section>
+
+  <section class="plan-card" aria-live="polite">
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-plan"></use></svg>Best army</h2>
+    <div id="results"></div>
+    <p class="hint notes">Not modelled: rams and wall damage, catapults, the hero, artifacts and alliance bonuses. Enemy smithy levels count as 0. Morale isn't verified against the game.</p>
+  </section>
+
+  <section id="simBox" hidden>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-troops"></use></svg>Simulate this army</h2>
+    <p class="hint" style="margin-top:0">Change the numbers to see the battle at once. Smithy levels come from Your troops.</p>
+    <div class="unit-grid gap" id="simTroops"></div>
+    <div id="simOut"></div>
+    <button type="button" id="simClose" class="gap">Close</button>
+  </section>
+</main>
+
+<script type="module" src="/src/combat.ts"></script>
+</body>
+</html>

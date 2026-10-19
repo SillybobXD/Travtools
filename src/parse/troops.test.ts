@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseTroops, villageArmy } from "./troops";
 
 /* Structure and numbers of a real phone copy of the overview's Troops tab, with the village names replaced. */
-const b = (n: number) => `‭‭${n}‬‬`;
+const b = (n: number) => `\u202d\u202d${n}\u202c\u202c`;
 const row = (name: string, ...n: number[]) => [name, ...n.map(b)].join("\t");
 const TAB = [
   "", b(754), b(6907), "Local time: 14:16:25 (UTC +01:00)",

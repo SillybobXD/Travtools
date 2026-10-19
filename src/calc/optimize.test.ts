@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { battle, type Army } from "./combat";
-import { armyValue, combatUnits, lootable, optimize, simplexGrid, unitValue, type AttackInput, type DefendInput } from "./optimize";
+import { armyValue, combatUnits, lootable, mainMix, optimize, simplexGrid, unitValue, type AttackInput, type DefendInput } from "./optimize";
 
 /* Teutons: 0 Clubswinger (att 40, cost 250), 2 Axeman, 4 Paladin, 5 Teutonic Knight. Gauls: 0 Phalanx (def 40/50, cost 315). */
 const G = (counts: number[]): Army => ({ tribe: "Gauls", counts });
@@ -59,10 +59,19 @@ describe("attack, optimal troops", () => {
     expect(r.best!.ownLossValue).toBeLessThanOrEqual(17_750);
   });
 
-  it("returns distinct alternatives", () => {
+  it("returns alternatives with another main mix of units, or a cost at least 10% apart", () => {
     const r = optimize(attackOptimal({ objective: "fewestLosses", source: { kind: "optimal", cap: 50_000 } }));
     expect(r.alternatives.length).toBeGreaterThan(0);
+    const picked = [r.best!, ...r.alternatives];
+    picked.forEach((a, i) => picked.slice(i + 1).forEach(b => {
+      expect(mainMix(a, "Teutons") !== mainMix(b, "Teutons") || Math.abs(a.cost - b.cost) > 0.1 * Math.max(a.cost, b.cost)).toBe(true);
+    }));
     for (const a of r.alternatives) expect(a.score).toBeLessThanOrEqual(r.best!.score);
+  });
+
+  it("the main mix ignores units worth under 10% of the army", () => {
+    const o = { counts: [100, 0, 1], cost: 100 * 250 + 490, sent: [{ village: null, army: { tribe: "Teutons", counts: [] } }] };
+    expect(mainMix(o, "Teutons")).toBe("100|");
   });
 
   it("counting wounded as recoverable lowers the loss value", () => {

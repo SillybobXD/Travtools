@@ -130,3 +130,35 @@ td .ico { width: 1em; height: 1em; margin-right: 0.2em; }
 .trade-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
 .trade-box .hero-wrap { margin-top: 10px; }
 .trade-box .inline { margin-top: 10px; }
+
+/* Page links */
+.top-nav { display: flex; gap: 6px; margin: 0 0 6px; font-size: 0.95rem; }
+.top-nav a { color: var(--muted); text-decoration: none; padding: 4px 10px; border: 1px solid transparent; border-radius: 999px; }
+.top-nav a:hover { color: var(--ink); }
+.top-nav a[aria-current="page"] { color: var(--ink); border-color: var(--line); background: var(--surface); font-weight: 700; }
+.top-nav .ico { color: inherit; }
+
+/* Combat page */
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { margin: 0; padding: 7px 14px; font-size: 0.95rem; color: var(--ink); cursor: pointer; border-left: 1px solid var(--line); display: inline-flex; align-items: center; }
+.seg label:first-child { border-left: 0; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg label:has(input:checked) { background: var(--ink); color: var(--surface); font-weight: 700; }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
+.seg-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.unit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 8px 10px; align-items: end; }
+.unit-grid label { overflow-wrap: anywhere; }
+.army { border-top: 1px solid var(--line); padding: 12px 0 2px; }
+.army:first-child { border-top: 0; padding-top: 0; }
+.army-top { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.checks label.check { color: var(--ink); font-weight: 500; --c: var(--focus); }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 12px; }
+.card.best { border: 0; padding: 0; margin-top: 0; }
+.card .verdict { margin-bottom: 6px; }
+.card h3 { margin: 0 0 4px; }
+.units-line { display: flex; flex-wrap: wrap; gap: 2px 14px; font-variant-numeric: tabular-nums; }
+.units-line b { font-weight: 700; }
+.card .troop-out { margin-top: 10px; }
+.card button { margin-top: 10px; }
+.notes { margin-top: 14px; }

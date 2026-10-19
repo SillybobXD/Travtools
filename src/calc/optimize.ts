@@ -202,13 +202,19 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const all = [...seen.values()].filter(o => o.score > -Infinity).sort((a, b) => b.score - a.score);
   const best = all[0] ?? null;
   const alternatives: ArmyOption[] = [];
-  const mix = (o: ArmyOption) => o.counts.map(n => (n > 0 ? 1 : 0)).join("") + "|" + o.sent.map(s => s.village).join(",");
+  const mix = (o: ArmyOption) => mainMix(o, input.tribe);
   for (const o of all.slice(1)) {
     if (alternatives.length >= (input.alternatives ?? 2)) break;
-    // Different from those already picked: another mix of unit types or village, or a cost at least 10% apart.
+    // Different from those already picked: another main mix or village, or a cost at least 10% apart.
     if ([best!, ...alternatives].every(p => mix(p) !== mix(o) || Math.abs(p.cost - o.cost) > 0.1 * Math.max(p.cost, o.cost))) alternatives.push(o);
   }
   return { best, alternatives, evaluated };
+}
+
+/** The unit types making up at least 10% of an army's value, and where it comes from: what tells two options apart. */
+export function mainMix(o: Pick<ArmyOption, "counts" | "cost" | "sent">, tribe: string): string {
+  const main = o.counts.map((n, i) => (o.cost > 0 && n * unitValue(tribe, i) >= 0.1 * o.cost ? 1 : 0)).join("");
+  return main + "|" + o.sent.map(s => s.village).join(",");
 }
 
 /** Even grid over the simplex of `m` weights: all compositions of `g` into m parts, divided by g. */

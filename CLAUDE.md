@@ -1,15 +1,17 @@
 # Travian Village Planner
 
-Static web tool for Travian Legends players. It keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution (optionally never converting into resources you claim from the hero), and works out what to send from another village, with the distance from map coordinates.
+Static web tool for Travian Legends players, two pages sharing the saved villages. The Village planner keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution (optionally never converting into resources you claim from the hero), and works out what to send from another village, with the distance from map coordinates. The Combat page finds the army to attack with or the reinforcements to send, from pasted reports and the player's troops.
 
 ## Structure
 Vite + TypeScript, no runtime dependencies. Output is a static site in `dist/`.
 
 ```
-index.html              markup only; loads src/style.css and src/main.ts
+index.html              Village planner markup only; loads src/style.css and src/main.ts
+combat.html             Combat page markup only; loads src/style.css and src/combat.ts
 src/
-  main.ts               DOM wiring: rendering, events, reading inputs
-  storage.ts            localStorage: saved villages, unit stat edits, migration of old saves
+  main.ts               Village planner DOM wiring: rendering, events, reading inputs
+  combat.ts             Combat page DOM wiring: reads inputs, runs optimize() and battle(), renders
+  storage.ts            localStorage: saved villages, unit stat edits, combat page state, migration of old saves
   style.css             all styles (light/dark via CSS variables on :root)
   types.ts              Res4, Unit, Building, Merchant, Celebration
   data/
@@ -28,6 +30,8 @@ src/
     report.ts           parseReport: battle, raid, scout and defence reports; reportArmy
     troops.ts           parseTroops: troops per village from the overview's Troops tab; villageArmy
     smithy.ts           parseSmithy: smithy levels per village from the overview's Smithy tab; villageSmithy
+    combatInput.ts      fillFromReport: what a parsed report fills in on the combat page
+    report.fixtures.ts  anonymized report pastes for tests (and for checking the page by hand)
   calc/                 pure functions, no DOM access
     buildings.ts        round5, levelCost, rangeCost, buildingTotals
     troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, maxTroopMixDirect, planTroops, mixDuration
@@ -36,6 +40,7 @@ src/
     combat.ts           upgraded, attackPower, defencePower, weightedDefence, wallBonus, wallDefence, morale, massFactor, lossShares, unitLosses, woundedOf, battle
     optimize.ts         optimize (attack or defend army search), unitValue, armyValue, combatUnits, lootable, simplexGrid
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
+    travel.ts           slowestSpeed, armyTravelSeconds
     timing.ts           timeToAffordDirect, timeToAffordTrade, timeToFull, timeToEmpty
     format.ts           fmt, fmtTime, toNum, toSignedNum
     *.test.ts           Vitest tests next to each module
@@ -54,7 +59,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 ## Rules
 - Keep calculation logic in `src/calc/` as pure functions with tests; `main.ts` only reads inputs and renders.
 - Do not reorder entries in `units.json`, `buildings.json`, `celebrations.json` or `nature.json`: saved state and parsed reports use indices. Append new entries at the end of a list.
-- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
+- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. Both pages load and save the whole store, so each keeps what the other wrote. The combat page adds `store.combat` (`CombatState`: mode, enemy armies, wall, target coordinates, loot, source, cap, allowed units per tribe, objective, populations) and `village.combat` (`VillageCombat`: own troops and smithy levels per unit index); both are optional, and `combatOf` / `villageCombat` fill in defaults so older saves load. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
 - A single troop row with no celebrations, every resource convertible and “Use an NPC trade” on must give exactly the results of the old single-unit version in each mode; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
 - Older saves had one village-wide troop `mode` (none/max/count/time) with shared hours and minutes. `normalizeTroops` gives each row its own mode and time on load; "none" becomes no rows. Keep it.
 - `[hidden] { display: none !important; }` in `style.css` makes the `hidden` attribute win over classes that set `display`. Keep it.
@@ -66,6 +71,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Keep it dependency-free at runtime unless a feature clearly needs a library.
 - Icons are our own inline SVG symbols in the sprite at the top of `index.html` (`<use href="#i-wood">`, or `icon()` in `main.ts`). Don't copy Travian's artwork.
 - The plan table must fit 375px without scrolling: keep long text in its cells on separate lines.
+- Both pages share `style.css` and link to each other from the `.top-nav` header. Each page carries its own copy of the icon sprite with the symbols it uses.
 - Mobile-first: the main user plays on a phone. Support light and dark mode via the CSS variables.
 
 ## Formulas in use
@@ -96,7 +102,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
   - Searched units: infantry and cavalry by default (`units` overrides); scouts, chiefs, settlers and siege are left out (rams wait for a ram model).
   - Search: armies are a direction (mix of unit types) times a scale. Optimal mode: the direction shares the budget, `count = floor(budget * share / cost)`; owned mode: the direction is a fraction of each type's troops, `count = floor(t * fraction * available)`. Directions come from an even simplex grid (at most 130). Per direction an integer bisection finds the smallest winning scale, and a fixed ladder (budgets 100 × 1.25^j up to the cap, or t = 0.8^j) samples the rest. The 5 best distinct armies are refined by local search on whole units (± a step of one type, or trading one type for another within the cap), halving the step to 1. Every candidate is scored with `battle()`. Typically 1,000–10,000 battles, 5–50 ms on a desktop.
   - Owned attacks search each village separately (Phase 5 will split attacks across villages); owned reinforcements combine villages, each as its own contingent with its own smithy.
-  - Output: the best army and up to 2 alternatives with another mix of unit types or a cost at least 10% apart, each with its `battle()` result, cost, own and enemy loss values, wounded value and loot.
+  - Output: the best army and up to 2 alternatives with another main mix (the unit types worth at least 10% of the army, `mainMix`) or a cost at least 10% apart, each with its `battle()` result, cost, own and enemy loss values, wounded value and loot.
 - Production per hour is entered per village (crop may be negative). Storage fills at `(cap - have) / production`; negative crop runs out at `have / -production`.
 - Time to afford (fixed plan, whichever way the switch is set). Without trading: the slowest missing resource, `(need - have) / production`; never if it isn't produced or doesn't fit in storage. Resources not to convert into are claimed from the hero and don't wait.
 - With an NPC trade: when the village's total reaches the need of the convertible resources. Each resource grows within its storage (production stops when full) and negative crop stops at 0, so the total is piecewise linear; `timeToAffordTrade` solves it exactly per stretch.
@@ -120,12 +126,22 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Building construction time is not implemented (formula depends on main building level and per-building constants).
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
 
+## Combat page
+`combat.html` + `src/combat.ts`, top to bottom:
+- Mode: Attack or Defend, Normal attack or Raid.
+- Paste a report: `parseReport` then `fillFromReport`. Attack: the report's defenders become the target's contingents (animals as Nature), plus the owner's tribe, wall (after rams if shown), an oasis's coordinates and scouted resources with cranny capacity. Defend: the report's attacker becomes the incoming army. Everything read is shown in editable fields and can be typed by hand.
+- Target / Incoming attack: owner's tribe and wall level, one unit grid per contingent (attack can add reinforcements), troops at home (defend, counted as ours), scouted resources and cranny capacity (attack raids), and the target's or defended village's coordinates.
+- Your troops: the saved village (its tribe and server speed are used), owned troops (stored per village, filled by pasting the Troops tab, rows matched by saved village name or game name) or any troops up to a resource cap, the units to use (infantry and cavalry), and smithy levels (pasting the Smithy tab).
+- Optimize for: the four objectives (most loot only in attack raids), wounded as recoverable, and optional populations for morale.
+- Best army: the best option and its alternatives as cards (army, win or lose, army value, our losses and wounded, enemy losses, loot in raids, travel time when both villages have coordinates, using the slowest unit and server speed). "Simulate / edit this army" opens an editable army run through `battle()` on every keystroke.
+The optimizer runs 200 ms after the last change; the simulator runs at once.
+
 ## Combat optimizer roadmap
 1. Done: combat data and the simulator in `combat.ts`.
 2. Done: paste parsers for battle, scout and defence reports and the overview's Troops and Smithy tabs (`src/parse/report.ts`, `troops.ts`, `smithy.ts`), no UI yet. Built from samples in `Report samples/` (git-ignored, like `Combat reports/`: they hold player and village names, so tests keep only anonymized structure and numbers).
 3. Done: optimizer in `src/calc/optimize.ts` (see "Formulas in use"), no UI yet. Waiting: a "rams get through" objective, once ram damage is modelled from simulator runs with rams against each wall type, winning and losing.
-4. A separate `combat.html` page sharing saved villages and storage.
-5. Splitting the army across villages using coordinates and travel time.
+4. Done: the Combat page (`combat.html`), sharing saved villages and storage with the planner.
+5. Next: splitting the army across villages using coordinates and travel time.
 
 ## Import reports and troops
 The user copies a report or the overview's Troops tab ("Own troops") or Smithy tab, the whole page or just that part. Tested against English phone copies.

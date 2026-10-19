@@ -3,7 +3,7 @@ import { cleanLines, COORD, NUM_LINE, toInt } from "./text";
 
 describe("text helpers", () => {
   it("cleanLines drops direction marks, non-breaking spaces and empty lines", () => {
-    expect(cleanLines("‭‭4,000‬‬\r\n\n  a b  \n")).toEqual(["4,000", "a b"]);
+    expect(cleanLines("\u202d\u202d4,000\u202c\u202c\r\n\n  a b  \n")).toEqual(["4,000", "a b"]);
   });
 
   it("toInt reads separators and both minus signs", () => {

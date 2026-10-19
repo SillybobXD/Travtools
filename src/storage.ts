@@ -47,6 +47,48 @@ export interface VillageState {
   /** Saved village the resources are sent from, if any. */
   sendFrom?: string;
   fields: Record<string, string>;
+  /** Combat page: this village's own troops and smithy levels, by unit index, as typed or imported. */
+  combat?: VillageCombat;
+}
+
+export interface VillageCombat {
+  troops: string[];
+  smithy: string[];
+}
+
+/** One army on the combat page, counts as typed. */
+export interface CombatArmy {
+  tribe: string;
+  counts: string[];
+}
+
+/** The combat page's inputs, kept as typed. Shared by all villages; absent in older saves. */
+export interface CombatState {
+  side: "attack" | "defend";
+  mode: "normal" | "raid";
+  /** Attack: the target's contingents (own troops first, then reinforcements). Defend: the incoming army (first entry). */
+  enemy: CombatArmy[];
+  /** Tribe of the village being attacked (for its wall); in defend mode, of our defended village. */
+  wallTribe: string;
+  wall: string;
+  /** Target coordinates (attack) or the attacker's (defend), for travel time. */
+  x: string;
+  y: string;
+  /** Scouted resources and cranny capacity, for raids. */
+  lootRes: string[];
+  cranny: string;
+  /** Saved village whose troops we use (attack) or send as reinforcements (defend). */
+  village: string;
+  /** Defend: troops already in the defended village. */
+  home: string[];
+  source: "owned" | "optimal";
+  cap: string;
+  /** Unit indices the optimizer may use, per tribe; missing means the default (infantry and cavalry). */
+  allowed: Record<string, number[]>;
+  objective: "fewestLosses" | "smallestWin" | "mostEnemyLosses" | "mostLoot";
+  woundedRecoverable: boolean;
+  ownPop: string;
+  enemyPop: string;
 }
 
 export interface UnitOverride {
@@ -61,7 +103,45 @@ export interface Store {
   villages: Record<string, VillageState>;
   /** Unit stats edited by the user, per tribe and unit index. Shared by all villages. */
   overrides: Record<string, Record<string, UnitOverride>>;
+  /** Combat page inputs; added by the combat page, older saves have none. */
+  combat?: CombatState;
 }
+
+const blank10 = () => Array.from({ length: 10 }, () => "");
+
+export function newCombatArmy(tribe: string): CombatArmy {
+  return { tribe, counts: blank10() };
+}
+
+export function newCombatState(tribe: string, village: string): CombatState {
+  return {
+    side: "attack", mode: "normal", enemy: [newCombatArmy(tribe)], wallTribe: tribe, wall: "", x: "", y: "",
+    lootRes: ["", "", "", ""], cranny: "", village, home: blank10(), source: "optimal", cap: "100000",
+    allowed: {}, objective: "fewestLosses", woundedRecoverable: false, ownPop: "", enemyPop: "",
+  };
+}
+
+/** The store's combat state, created or completed with defaults so older saves load. */
+export function combatOf(store: Store): CombatState {
+  const first = store.villages[store.current] ?? Object.values(store.villages)[0];
+  const def = newCombatState(first?.tribe ?? "Teutons", store.current);
+  const c: CombatState = { ...def, ...(store.combat ?? {}) };
+  if (!c.enemy?.length) c.enemy = def.enemy;
+  c.enemy = c.enemy.map(a => ({ tribe: a.tribe, counts: pad10(a.counts) }));
+  c.home = pad10(c.home);
+  c.lootRes = [0, 1, 2, 3].map(i => c.lootRes?.[i] ?? "");
+  if (!store.villages[c.village]) c.village = store.current;
+  store.combat = c;
+  return c;
+}
+
+/** A village's combat troops and smithy, created with blanks when missing. */
+export function villageCombat(v: VillageState): VillageCombat {
+  v.combat = { troops: pad10(v.combat?.troops), smithy: pad10(v.combat?.smithy) };
+  return v.combat;
+}
+
+const pad10 = (a: string[] | undefined) => Array.from({ length: 10 }, (_, i) => a?.[i] ?? "");
 
 export function newVillage(name: string, tribe: string, speed: string): VillageState {
   return {
