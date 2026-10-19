@@ -22,6 +22,9 @@ src/
     index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY, WALLS
   parse/
     overview.ts         parseOverview: reads a pasted copy of the game's village overview
+    text.ts             shared helpers: cleanLines (drops direction marks), toInt, NUM/SNUM/NUM_LINE/COORD patterns
+    report.ts           parseReport (stub, waits for samples): BattleReport types for battle, raid, scout and defence reports; reportArmy
+    troops.ts           parseTroops (stub, waits for a sample): troops per village from the overview's Troops tab; villageArmy
   calc/                 pure functions, no DOM access
     buildings.ts        round5, levelCost, rangeCost, buildingTotals
     troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, maxTroopMixDirect, planTroops, mixDuration
@@ -103,7 +106,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 
 ## Combat optimizer roadmap
 Phase 1 (done): combat data and the simulator in `combat.ts`.
-2. Paste parsers for battle, scout and defence reports and the village overview Troops tab.
+2. Paste parsers for battle, scout and defence reports and the village overview Troops tab. Types and stubs are in `src/parse/report.ts` and `troops.ts`; the formats get built from samples the user saves in `Report samples/` (git-ignored, like `Combat reports/`: they hold player and village names, so tests keep only anonymized structure and numbers).
 3. Optimizer in `src/calc/optimize.ts`: owned troops, or an "optimal" army of any units of your tribe under a resource cap; objectives: fewest losses by resource value, smallest winning army, most enemy losses, rams get through; normal attack and raid; attack and defend modes.
 4. A separate `combat.html` page sharing saved villages and storage.
 5. Splitting the army across villages using coordinates and travel time.

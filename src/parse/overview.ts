@@ -1,4 +1,5 @@
 import type { Res4 } from "../types";
+import { cleanLines, COORD, NUM, NUM_LINE, SNUM, sum, toInt } from "./text";
 
 /** What a paste of the game's village overview page contains. */
 export interface OverviewImport {
@@ -19,23 +20,12 @@ export interface OverviewImport {
   coords: Record<string, { x: number; y: number }>;
 }
 
-/** Direction marks the game wraps around every number. */
-const BIDI = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
-/** A whole number with optional thousands separators (comma, dot, apostrophe, narrow space). */
-const NUM = String.raw`\d{1,3}(?:[.,'\u202f]?\d{3})*`;
-const NUM_LINE = new RegExp(`^[-−]?${NUM}$`);
-/** `(12|34)`, optionally after the village name on the same line. */
-const COORD = /^(.*?)\s*\(\s*([-−]?\d+)\s*\|\s*([-−]?\d+)\s*\)$/;
 /** Resources tab: name, wood, clay, iron, crop, merchants "free/total". */
 const ROW = new RegExp(String.raw`^(.*?\S)\s+(${NUM})\s+(${NUM})\s+(${NUM})\s+(${NUM})\s+\d+\s*/\s*\d+$`);
 /** Production tab: name and four per-hour numbers (crop can be negative), no merchants. */
-const SNUM = `[-−]?${NUM}`;
 const PROD_ROW = new RegExp(String.raw`^(.*?\S)\s+(${SNUM})\s+(${SNUM})\s+(${SNUM})\s+(${SNUM})$`);
 /** Capacity tab: name, warehouse, granary. */
 const CAP_ROW = new RegExp(String.raw`^(.*?\S)\s+(${NUM})\s+(${NUM})$`);
-
-const toInt = (s: string) => { const n = parseInt(s.replace(/[^\d]/g, ""), 10) * (/^[-−]/.test(s) ? -1 : 1); return isNaN(n) ? 0 : n; };
-const sum = (r: number[]) => r.reduce((a, b) => a + b, 0);
 
 /** Finds the top bar: warehouse, wood, clay, iron, granary, crop in a run of number-only lines. */
 function findStock(lines: string[]): OverviewImport["stock"] {
@@ -58,7 +48,7 @@ function findStock(lines: string[]): OverviewImport["stock"] {
 }
 
 export function parseOverview(text: string): OverviewImport {
-  const lines = text.replace(BIDI, "").split(/\r?\n/).map(l => l.replace(/\u00a0/g, " ").trim()).filter(Boolean);
+  const lines = cleanLines(text);
   const stock = findStock(lines);
 
   const villages = dropSumRow(lines.flatMap(l => {
