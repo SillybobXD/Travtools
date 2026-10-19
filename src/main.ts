@@ -379,7 +379,7 @@ function calc() {
   const troopSum = rows.reduce((s, r, k) => s + r.u.cost.reduce((a, b) => a + b, 0) * counts[k], 0);
 
   /* verdict */
-  const { haveTotal, needSum, needAll, shortEach, shortSum, heroTake, heroSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need, convert);
+  const { haveTotal, needSum, needAll, shortEach, shortSum, villageShort, villageShortSum, heroTake, heroSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need, convert);
   const heroList = joinAnd(RES.filter(i => heroTake[i] > 0).map(i => `${fmt(heroTake[i])} ${NAMES[i].toLowerCase()}`));
   const heroTxt = heroSum > 0 ? ` Then claim ${heroList} from the hero.` : "";
   let verdict;
@@ -475,17 +475,19 @@ function calc() {
     : src && auto === null ? "Add map coordinates for both villages to get the distance." : "Add a distance to see travel time.";
   let send;
   if (needAll === 0) send = `<p class="zero">Nothing to send yet.</p>`;
-  else if (coveredDirect) send = `<p class="good">Nothing to send. This village already has everything${heroSum > 0 ? " once you claim from the hero" : ""}.</p>`;
+  else if (villageShortSum === 0) send = `<p class="good">Nothing to send. This village already has everything.</p>`;
   else {
-    const exact = shortEach.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
-    send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(shortSum)} total, ${fmt(merchants(shortSum))} merchant${merchants(shortSum) === 1 ? "" : "s"}.</p>`;
-    if (!coveredNpc) {
+    // Without trading means the village alone, so resources you'd claim from the hero are sent too.
+    const exact = villageShort.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
+    send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(villageShortSum)} total, ${fmt(merchants(villageShortSum))} merchant${merchants(villageShortSum) === 1 ? "" : "s"}.</p>`;
+    if (coveredDirect) send += `<p><strong>Or skip sending</strong> and claim ${heroList} from the hero.</p>`;
+    else if (!coveredNpc) {
       const gap = needSum - haveTotal;
-      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts.</p>`;
+      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts${heroSum > 0 ? ` and claim ${heroList} from the hero` : ""}.</p>`;
     } else send += `<p><strong>Or skip sending</strong> and use the NPC trade above.</p>`;
     if (src) {
       const srcHave = res4(i => toNum(src.fields["have" + i]));
-      const low = RES.filter(i => shortEach[i] > srcHave[i]);
+      const low = RES.filter(i => villageShort[i] > srcHave[i]);
       if (low.length) send += `<p class="warn">${esc(src.name)} only has ${joinAnd(low.map(i => `${fmt(srcHave[i])} ${NAMES[i].toLowerCase()}`))} saved here.</p>`;
     }
     send += `<p class="hint" style="margin:0">${travelTxt}</p>`;

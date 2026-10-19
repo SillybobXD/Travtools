@@ -65,6 +65,17 @@ describe("do not convert into", () => {
     expect(p).toMatchObject({ haveTotal: 1100, needSum: 300, needAll: 1200, shortEach: [0, 100, 100, 0], heroTake: [0, 0, 0, 900], heroSum: 900, coveredNpc: true, useNpc: true });
   });
 
+  it("still counts that resource's shortfall in what the village alone is missing", () => {
+    const p = planNeeds([500, 0, 0, 600], [100, 100, 100, 900], NO_CROP);
+    expect(p.villageShort).toEqual([0, 100, 100, 300]);
+    expect(p.villageShortSum).toBe(500);
+  });
+
+  it("claims the whole need when the village is short even after a trade", () => {
+    const p = planNeeds([100, 0, 0, 600], [500, 500, 500, 900], NO_CROP);
+    expect(p).toMatchObject({ coveredNpc: false, heroTake: [0, 0, 0, 900] });
+  });
+
   it("only claims the shortfall when no trade is needed", () => {
     const p = planNeeds([100, 100, 100, 20], [100, 100, 100, 50], NO_CROP);
     expect(p).toMatchObject({ coveredDirect: true, useNpc: false, heroTake: [0, 0, 0, 30] });

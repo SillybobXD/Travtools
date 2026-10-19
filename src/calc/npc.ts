@@ -15,6 +15,9 @@ export interface PlanNeeds {
   /** Missing amount per resource without trading; 0 for resources claimed from the hero. */
   shortEach: Res4;
   shortSum: number;
+  /** Missing amount per resource from the village alone, nothing from the hero: what to send without trading. */
+  villageShort: Res4;
+  villageShortSum: number;
   /** What to claim from the hero per resource. */
   heroTake: Res4;
   heroSum: number;
@@ -30,20 +33,23 @@ const ALL = [true, true, true, true];
 
 /**
  * `convert[i]` false means "do not convert into resource i": the trade turns all of it into
- * the other resources and its need is claimed from the hero instead. Without a trade only
- * its shortfall is claimed.
+ * the other resources and its need is claimed from the hero instead. When no trade is needed
+ * only its shortfall is claimed.
  */
 export function planNeeds(have: Res4, need: Res4, convert: boolean[] = ALL): PlanNeeds {
   const haveTotal = have.reduce((a, b) => a + b, 0);
   const needSum = need.reduce((a, b, i) => a + (convert[i] ? b : 0), 0);
   const shortEach = need.map((v, i) => convert[i] ? Math.max(0, v - have[i]) : 0) as Res4;
   const shortSum = shortEach.reduce((a, b) => a + b, 0);
+  const villageShort = need.map((v, i) => Math.max(0, v - have[i])) as Res4;
   const coveredDirect = shortSum === 0;
   const coveredNpc = haveTotal >= needSum;
   const useNpc = coveredNpc && !coveredDirect;
-  const heroTake = need.map((v, i) => convert[i] ? 0 : useNpc ? v : Math.max(0, v - have[i])) as Res4;
+  // Any plan with a trade (now, or after sending) trades all of it away, so its whole need is claimed.
+  const heroTake = need.map((v, i) => convert[i] ? 0 : coveredDirect ? Math.max(0, v - have[i]) : v) as Res4;
   return {
     haveTotal, needSum, needAll: need.reduce((a, b) => a + b, 0), shortEach, shortSum,
+    villageShort, villageShortSum: villageShort.reduce((a, b) => a + b, 0),
     heroTake, heroSum: heroTake.reduce((a, b) => a + b, 0),
     coveredDirect, coveredNpc, useNpc,
   };
