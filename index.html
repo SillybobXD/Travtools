@@ -94,14 +94,29 @@
     <h2><svg class="ico" aria-hidden="true"><use href="#i-troops"></use></svg>Troops</h2>
     <div id="troops"></div>
     <button type="button" id="addTroop" class="gap">Add troop type</button>
-    <p class="hint" id="ratioHint">Each troop type has its own way to plan: as many as possible, a set number, or enough to fill a training time. Set numbers and timed troops are paid first; “Max possible” types share the rest by their ratio, for example 2 and 1 for twice as many of the first.</p>
+    <p class="hint" id="ratioHint">Set numbers and timed troops come first. “Max possible” troops use what's left, split by their Ratio.</p>
     <div id="trainFields"></div>
-    <div id="tradeWrap" class="gap"><label class="check plain"><input type="checkbox" id="useTrade"> Use an NPC trade for “Max possible”</label></div>
     <div class="troop-out" id="troopOut"></div>
   </section>
 
   <section class="plan-card" aria-live="polite">
     <h2><svg class="ico" aria-hidden="true"><use href="#i-plan"></use></svg>Plan</h2>
+    <div class="trade-box">
+      <label class="check plain"><input type="checkbox" id="useTrade"> Use an NPC trade</label>
+      <div id="tradeOpts">
+        <div class="hero-wrap" role="group" aria-labelledby="heroLabel">
+          <span id="heroLabel">Don't convert into (trade it all away, claim it from the hero):</span>
+          <label class="check" style="--c: var(--wood)"><input type="checkbox" id="hero0"> <svg class="ico" aria-hidden="true"><use href="#i-wood"></use></svg>Wood</label>
+          <label class="check" style="--c: var(--clay)"><input type="checkbox" id="hero1"> <svg class="ico" aria-hidden="true"><use href="#i-clay"></use></svg>Clay</label>
+          <label class="check" style="--c: var(--iron)"><input type="checkbox" id="hero2"> <svg class="ico" aria-hidden="true"><use href="#i-iron"></use></svg>Iron</label>
+          <label class="check" style="--c: var(--crop)"><input type="checkbox" id="hero3"> <svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg>Crop</label>
+        </div>
+        <div class="inline" id="prefWrap">
+          <label for="pref">Leftover into</label>
+          <select id="pref"><option value="3">Crop</option><option value="0">Wood</option><option value="1">Clay</option><option value="2">Iron</option></select>
+        </div>
+      </div>
+    </div>
     <p class="verdict" id="verdict"></p>
     <p class="hint afford" id="affordNote"></p>
     <div class="table-wrap">
@@ -110,17 +125,6 @@
         <tbody id="planBody"></tbody>
         <tfoot id="planFoot"></tfoot>
       </table>
-    </div>
-    <div class="hero-wrap" role="group" aria-labelledby="heroLabel">
-      <span id="heroLabel">Do not convert into (trade all of it away and claim what you need from the hero):</span>
-      <label class="check" style="--c: var(--wood)"><input type="checkbox" id="hero0"> <svg class="ico" aria-hidden="true"><use href="#i-wood"></use></svg>Wood</label>
-      <label class="check" style="--c: var(--clay)"><input type="checkbox" id="hero1"> <svg class="ico" aria-hidden="true"><use href="#i-clay"></use></svg>Clay</label>
-      <label class="check" style="--c: var(--iron)"><input type="checkbox" id="hero2"> <svg class="ico" aria-hidden="true"><use href="#i-iron"></use></svg>Iron</label>
-      <label class="check" style="--c: var(--crop)"><input type="checkbox" id="hero3"> <svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg>Crop</label>
-    </div>
-    <div class="inline" id="prefWrap">
-      <label for="pref">Put NPC leftover into</label>
-      <select id="pref"><option value="3">Crop</option><option value="0">Wood</option><option value="1">Clay</option><option value="2">Iron</option></select>
     </div>
     <p class="hint" id="planNote"></p>
 

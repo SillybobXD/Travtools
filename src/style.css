@@ -125,3 +125,8 @@ td .ico { width: 1em; height: 1em; margin-right: 0.2em; }
 
 /* Timing */
 .afford { margin: -4px 0 12px; }
+
+/* Trading switch */
+.trade-box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+.trade-box .hero-wrap { margin-top: 10px; }
+.trade-box .inline { margin-top: 10px; }

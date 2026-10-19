@@ -334,7 +334,11 @@ function calc() {
   const otherTot = res4(i => bTot[i] + cc.tot[i]);
 
   /* troops */
-  const convert = RES.map(i => !v.hero![i]);
+  // One switch decides whether the plan uses an NPC trade; "Do not convert into" only applies when it does.
+  const trade = v.useTrade !== false;
+  const ticked = RES.map(i => !!v.hero![i]);
+  const convert = RES.map(i => !trade || !ticked[i]);
+  $("tradeOpts").hidden = !trade;
   const rows = v.troops.map(r => {
     const u = unitStats(v.tribe, r.unit), t = trainOf(u.building);
     const perUnit = trainingTime(u.time, toNum(t.lvl), speed, toNum(t.bonus));
@@ -343,20 +347,18 @@ function calc() {
       plan: { mode: r.mode!, cost: u.cost, weight: ratio(r.ratio), count: toNum(r.count), seconds: (toNum(r.hours) * 60 + toNum(r.mins)) * 60, perUnit },
     };
   });
-  const trade = v.useTrade !== false, hasMax = rows.some(r => r.plan.mode === "max");
-  const withTrade = planTroops(rows.map(r => r.plan), have, otherTot, caps, convert, true);
-  const noTrade = planTroops(rows.map(r => r.plan), have, otherTot, caps, convert, false);
-  const { counts, capLimited } = trade ? withTrade : noTrade;
-  /** The max-possible counts the other way, shown next to the ones in the plan. */
-  const alt = trade ? noTrade.counts : withTrade.counts, altLabel = trade ? "without trading" : "with an NPC trade";
-  $("tradeWrap").hidden = !hasMax;
+  const plans = rows.map(r => r.plan), hasMax = plans.some(p => p.mode === "max");
+  const { counts, capLimited } = planTroops(plans, have, otherTot, caps, convert, trade);
+  /** "Max possible" counts the other way round, shown in brackets. */
+  const alt = hasMax ? (trade ? planTroops(plans, have, otherTot, caps, [true, true, true, true], false) : planTroops(plans, have, otherTot, caps, RES.map(i => !ticked[i]), true)).counts : [];
+  const altLabel = trade ? "without trading" : "with a trade";
 
   const upkeep = rows.reduce((s, r, i) => s + r.u.upkeep * counts[i], 0);
   const parts = [];
   if (rows.length === 1) {
     const [r] = rows, n = counts[0];
     parts.push(`<div><div class="big">${fmt(n)}</div><span class="hint" style="margin:0">${esc(r.u.name)}</span></div>`);
-    if (hasMax) parts.push(`<div class="stat"><span>${trade ? "Without trading" : "With an NPC trade"}</span><strong>${fmt(alt[0])}</strong></div>`);
+    if (hasMax) parts.push(`<div class="stat"><span>${trade ? "Without trading" : "With a trade"}</span><strong>${fmt(alt[0])}</strong></div>`);
     if (r.perUnit > 0) {
       parts.push(`<div class="stat"><span>Each unit</span><strong>${fmtTime(r.perUnit)}</strong></div>`);
       parts.push(`<div class="stat"><span>All units</span><strong>${fmtTime(r.perUnit * n)}</strong></div>`);
@@ -364,32 +366,38 @@ function calc() {
   } else if (rows.length > 1) {
     rows.forEach((r, i) => {
       const el = $("tout" + i); if (!el) return;
-      el.innerHTML = `<span><b>${fmt(counts[i])}</b> units</span>` + (r.plan.mode === "max" ? `<span class="zero">${fmt(alt[i])} ${altLabel}</span>` : "") +
+      el.innerHTML = `<span><b>${fmt(counts[i])}</b> units</span>` + (r.plan.mode === "max" ? `<span class="zero">(${fmt(alt[i])} ${altLabel})</span>` : "") +
         (r.perUnit > 0 ? `<span>each ${fmtTime(r.perUnit)}</span><span>all ${fmtTime(r.perUnit * counts[i])}</span>` : `<span class="warn">no base time</span>`);
     });
     parts.push(`<div><div class="big">${fmt(counts.reduce((a, b) => a + b, 0))}</div><span class="hint" style="margin:0">units in total</span></div>`);
-    if (hasMax) parts.push(`<div class="stat"><span>${trade ? "Without trading" : "With an NPC trade"}</span><strong>${fmt(alt.reduce((a, b) => a + b, 0))}</strong></div>`);
     parts.push(rows.every(r => r.perUnit > 0)
       ? `<div class="stat"><span>All done in</span><strong>${fmtTime(mixDuration(rows, counts))}</strong></div>`
       : `<div class="stat"><span>Training time</span><strong class="warn">Add base time in Unit stats</strong></div>`);
   }
   if (rows.length) parts.push(`<div class="stat"><span>Upkeep</span><strong>${fmt(upkeep)} crop/h</strong></div>`);
   $("troopOut").innerHTML = parts.join("");
-  const need = res4(i => otherTot[i] + rows.reduce((s, r, k) => s + r.u.cost[i] * counts[k], 0));
+  const troopCost = (keep: (k: number) => boolean) => res4(i => rows.reduce((s, r, k) => s + (keep(k) ? r.u.cost[i] * counts[k] : 0), 0));
+  /** Everything in the plan, "Max possible" troops included: what the NPC trade has to produce. */
+  const need = res4(i => otherTot[i] + troopCost(() => true)[i]);
+  /** The plan without "Max possible" troops, which only use what's left: what's worth sending or waiting for. */
+  const fixedNeed = res4(i => otherTot[i] + troopCost(k => plans[k].mode !== "max")[i]);
   const troopSum = rows.reduce((s, r, k) => s + r.u.cost.reduce((a, b) => a + b, 0) * counts[k], 0);
 
   /* verdict */
-  const { haveTotal, needSum, needAll, shortEach, shortSum, villageShort, villageShortSum, heroTake, heroSum, coveredDirect, coveredNpc, useNpc } = planNeeds(have, need, convert);
+  const { haveTotal, needSum, needAll, shortEach, shortSum, villageShortSum, heroTake, heroSum, coveredDirect, coveredNpc } = planNeeds(have, need, convert);
+  const useNpc = trade && coveredNpc && !coveredDirect;
   const heroList = joinAnd(RES.filter(i => heroTake[i] > 0).map(i => `${fmt(heroTake[i])} ${NAMES[i].toLowerCase()}`));
   const heroTxt = heroSum > 0 ? ` Then claim ${heroList} from the hero.` : "";
   let verdict;
   if (needAll === 0) verdict = "Add buildings or troops to see what they cost.";
-  else if (coveredDirect) verdict = heroSum > 0 ? `Enough once you claim ${heroList} from the hero. No trade needed.` : `You already have enough. No trade needed.`;
+  else if (coveredDirect) verdict = heroSum > 0 ? `Enough once you claim ${heroList} from the hero. No trade needed.` : "You already have enough. No trade needed.";
+  else if (!trade) verdict = `You're missing ${fmt(villageShortSum)} resources without trading.`;
   else if (coveredNpc) verdict = `One NPC trade covers it. You have ${fmt(haveTotal - needSum)} to spare.` + heroTxt;
   else verdict = `You're ${fmt(needSum - haveTotal)} resources short, even after trading.` + heroTxt;
   $("verdict").textContent = verdict;
 
-  /* timing */
+  /* timing: for the fixed plan, since "Max possible" troops already fit what you have */
+  const fixed = planNeeds(have, fixedNeed, convert);
   const perHour = res4(i => toSignedNum($("prod" + i).value));
   const hasProd = perHour.some(p => p !== 0);
   /** "in 1:20:00 (21:50)" counted from when the numbers were entered, or null for never. */
@@ -411,10 +419,10 @@ function calc() {
   } else fill.push("Add production to see when storage fills up and when you can afford the plan.");
   $("fillNote").innerHTML = fill.join(" ");
   let afford = "";
-  if (hasProd && needAll > 0 && !coveredDirect) {
-    const enough = (secs: number) => { const w = when(secs); return w ? `enough ${w}` : "not with this production and storage"; };
-    afford = `<strong>Without trading:</strong> ${enough(timeToAffordDirect(have, need, perHour, caps, convert))}. ` +
-      `<strong>With an NPC trade:</strong> ${coveredNpc ? "now" : enough(timeToAffordTrade(have, need, perHour, caps, convert))}.`;
+  const waitFor = trade ? !fixed.coveredNpc : !fixed.coveredDirect;
+  if (hasProd && fixed.needAll > 0 && waitFor) {
+    const w = when(trade ? timeToAffordTrade(have, fixedNeed, perHour, caps, convert) : timeToAffordDirect(have, fixedNeed, perHour, caps, convert));
+    afford = w ? `Enough ${trade ? "for the trade" : "without trading"} ${w}.` : "Your production and storage won't get there on their own.";
   }
   $("affordNote").innerHTML = afford;
 
@@ -461,7 +469,7 @@ function calc() {
   if (!wh || !gr) notes.push("Add warehouse and granary capacity so the plan respects storage.");
   $("planNote").innerHTML = notes.join(" ");
 
-  /* sending */
+  /* sending: for the fixed plan, since "Max possible" troops already fit what you have */
   const src = v.sendFrom ? store.villages[v.sendFrom] : undefined;
   const here = coordsOf($("x").value, $("y").value), there = src && coordsOf(src.fields.x, src.fields.y);
   const auto = here && there ? mapDistance(here, there) : null;
@@ -469,25 +477,28 @@ function calc() {
   distEl.readOnly = auto !== null;
   if (auto !== null) distEl.value = String(Math.round(auto * 10) / 10);
   const cap = num("merchCap"), mspd = num("merchSpeed"), dist = auto ?? (parseFloat(distEl.value) || 0);
-  const merchants = (amt: number) => merchantsNeeded(amt, cap);
+  const merchants = (amt: number) => `${fmt(merchantsNeeded(amt, cap))} merchant${merchantsNeeded(amt, cap) === 1 ? "" : "s"}`;
   const travel = travelSeconds(dist, mspd, speed);
   const travelTxt = travel ? `Travel time one way: <strong>${fmtTime(travel)}</strong>.`
     : src && auto === null ? "Add map coordinates for both villages to get the distance." : "Add a distance to see travel time.";
+  // Sending without a trade means the village alone: ticked resources are sent too.
+  const sendList = fixed.villageShort.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
+  const sendAll = `send ${sendList} (${fmt(fixed.villageShortSum)} total, ${merchants(fixed.villageShortSum)})`;
+  const leftNote = hasMax ? " “Max possible” troops use what's left." : "";
   let send;
   if (needAll === 0) send = `<p class="zero">Nothing to send yet.</p>`;
-  else if (villageShortSum === 0) send = `<p class="good">Nothing to send. This village already has everything.</p>`;
+  else if (fixed.villageShortSum === 0) send = `<p class="good">Nothing to send. This village already has everything.${leftNote}</p>`;
   else {
-    // Without trading means the village alone, so resources you'd claim from the hero are sent too.
-    const exact = villageShort.map((s, i) => s > 0 ? `<span style="color:${COLORS[i]};font-weight:700">${NAMES[i]}</span> ${fmt(s)}` : null).filter(Boolean).join(", ");
-    send = `<p><strong>Without trading:</strong> send ${exact}. That's ${fmt(villageShortSum)} total, ${fmt(merchants(villageShortSum))} merchant${merchants(villageShortSum) === 1 ? "" : "s"}.</p>`;
-    if (coveredDirect) send += `<p><strong>Or skip sending</strong> and claim ${heroList} from the hero.</p>`;
-    else if (!coveredNpc) {
-      const gap = needSum - haveTotal;
-      send += `<p><strong>With an NPC trade after:</strong> send ${fmt(gap)} of any resource, ${fmt(merchants(gap))} merchant${merchants(gap) === 1 ? "" : "s"}, then trade to the “Needed” amounts${heroSum > 0 ? ` and claim ${heroList} from the hero` : ""}.</p>`;
-    } else send += `<p><strong>Or skip sending</strong> and use the NPC trade above.</p>`;
+    if (!trade) send = `<p><strong>Send</strong> ${sendList}. That's ${fmt(fixed.villageShortSum)} total, ${merchants(fixed.villageShortSum)}.</p>`;
+    else if (fixed.coveredDirect) send = `<p class="good">Nothing to send: claim ${heroList} from the hero.${leftNote}</p><p>Or ${sendAll}.</p>`;
+    else if (fixed.coveredNpc) send = `<p class="good">Nothing to send: the NPC trade above covers it.${leftNote}</p><p>To skip the trade, ${sendAll}.</p>`;
+    else {
+      const gap = fixed.needSum - fixed.haveTotal;
+      send = `<p><strong>Send ${fmt(gap)} of any resource</strong> (${merchants(gap)}), then make the NPC trade above${heroSum > 0 ? ` and claim ${heroList} from the hero` : ""}.</p><p>Or, without trading, ${sendAll}.</p>`;
+    }
     if (src) {
       const srcHave = res4(i => toNum(src.fields["have" + i]));
-      const low = RES.filter(i => villageShort[i] > srcHave[i]);
+      const low = RES.filter(i => fixed.villageShort[i] > srcHave[i]);
       if (low.length) send += `<p class="warn">${esc(src.name)} only has ${joinAnd(low.map(i => `${fmt(srcHave[i])} ${NAMES[i].toLowerCase()}`))} saved here.</p>`;
     }
     send += `<p class="hint" style="margin:0">${travelTxt}</p>`;
