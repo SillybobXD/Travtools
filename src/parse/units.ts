@@ -1,8 +1,8 @@
-import { UNITS } from "../data";
+import { NATURE, NATURE_TRIBE, UNITS } from "../data";
 
 /** A table header that names the units: ten unit names, optionally followed by "Hero". */
 export interface UnitHeader {
-  /** Tribe key in units.json whose unit names match, or null (another language, or Nature's animals). */
+  /** Tribe key in units.json whose unit names match, NATURE_TRIBE for animals, or null (e.g. another language). */
   tribe: string | null;
   /** The ten unit names as shown. */
   units: string[];
@@ -12,9 +12,10 @@ export interface UnitHeader {
 
 const norm = (s: string) => s.trim().toLowerCase();
 
-/** The tribe whose ten unit names match these, ignoring case; null if none does. */
+/** The tribe whose ten unit names match these, ignoring case: a key of UNITS, NATURE_TRIBE for animals, or null. */
 export function tribeOf(names: string[]): string | null {
   const n = names.map(norm);
+  if (NATURE.length === n.length && NATURE.every((a, i) => norm(a.name) === n[i])) return NATURE_TRIBE;
   for (const [tribe, units] of Object.entries(UNITS))
     if (units.length === n.length && units.every((u, i) => norm(u.name) === n[i])) return tribe;
   return null;

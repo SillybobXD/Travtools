@@ -1,4 +1,4 @@
-import { UNITS, WALLS } from "../data";
+import { NATURE, NATURE_TRIBE, UNITS, WALLS } from "../data";
 import type { Unit } from "../types";
 
 /*
@@ -76,8 +76,13 @@ const round = (precision: number) => (n: number) => Math.round(n / precision) * 
 const round4 = round(1e-4);
 const round3 = round(1e-3);
 
-const unitsOf = (tribe: string): Unit[] => {
-  const units = UNITS[tribe];
+/** What combat needs from a unit. Animals fight as infantry. */
+type CombatUnit = Pick<Unit, "att" | "defInf" | "defCav" | "upkeep" | "kind">;
+const ANIMALS: CombatUnit[] = NATURE.map(a => ({ ...a, kind: "inf" }));
+
+/** A tribe's units, or Nature's animals for NATURE_TRIBE. */
+const unitsOf = (tribe: string): CombatUnit[] => {
+  const units = tribe === NATURE_TRIBE ? ANIMALS : UNITS[tribe];
   if (!units) throw new Error(`Unknown tribe: ${tribe}`);
   return units;
 };
@@ -191,8 +196,9 @@ export function unitLosses(counts: number[], share: number): number[] {
   return counts.map(n => (n > 0 ? n - Math.round(n * (1 - share)) : 0));
 }
 
-/** Wounded among the units lost, as the game's simulator lists them: `floor(lost * 0.4)` per unit type, 0 for siege. */
+/** Wounded among the units lost, as the game's simulator lists them: `floor(lost * 0.4)` per unit type, 0 for siege and animals. */
 export function woundedOf(tribe: string, losses: number[]): number[] {
+  if (tribe === NATURE_TRIBE) return losses.map(() => 0);
   const units = unitsOf(tribe);
   return losses.map((n, i) => (units[i]?.kind === "siege" ? 0 : Math.floor(n * WOUNDED_SHARE + 1e-9)));
 }

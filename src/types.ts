@@ -20,7 +20,7 @@ export interface Unit {
   defInf: number;
   /** Defence against cavalry. */
   defCav: number;
-  /** Fields per hour at 1× speed. */
+  /** Fields per hour at 1Ã— speed. */
   speed: number;
   /** Resources one unit carries home from a raid or attack. */
   carry: number;
@@ -48,6 +48,15 @@ export interface Celebration {
   cost: Res4;
   /** Minimum town hall level. */
   townHall: number;
+}
+
+/** Nature's animals (oasis defenders): combat stats only. Kept apart from UNITS so they are never a playable tribe. */
+export interface Animal {
+  name: string;
+  att: number;
+  defInf: number;
+  defCav: number;
+  upkeep: number;
 }
 
 /** A tribe's wall: adds `def * level` to the village's base defence, then multiplies all defence by factor^level. */

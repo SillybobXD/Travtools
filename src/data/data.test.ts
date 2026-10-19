@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, CAPACITY, CELEBRATIONS, MERCH, UNITS, WALLS } from ".";
+import { BUILDINGS, CAPACITY, CELEBRATIONS, MERCH, NATURE, NATURE_TRIBE, UNITS, WALLS } from ".";
 
 const isRes4 = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every(v => Number.isInteger(v) && v >= 0);
 
@@ -27,6 +27,12 @@ describe("data files", () => {
     const count = (k: string) => units.filter(u => u.kind === k).length;
     expect([count("scout"), count("siege"), count("admin")]).toEqual([1, 2, 2]);
     expect(units.filter(u => u.kind === "scout").every(u => u.att === 0)).toBe(true);
+  });
+
+  it("Nature's animals are separate from the tribes and well-formed", () => {
+    expect(UNITS[NATURE_TRIBE]).toBeUndefined();
+    expect(NATURE.map(a => a.name)).toEqual(["Rat", "Spider", "Snake", "Bat", "Wild Boar", "Wolf", "Bear", "Crocodile", "Tiger", "Elephant"]);
+    for (const a of NATURE) for (const v of [a.att, a.defInf, a.defCav, a.upkeep]) expect(Number.isInteger(v) && v > 0, a.name).toBe(true);
   });
 
   it("walls are well-formed", () => {

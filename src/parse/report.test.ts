@@ -161,7 +161,7 @@ describe("parseReport", () => {
     expect(r.loot).toBeNull();
     expect(r.defenders).toHaveLength(2);
     expect(r.defenders[0]).toMatchObject({ tribe: "Gauls", sent: [94, 104, 1, 29, 154, 38, 0, 0, 0, 0], hero: { sent: true, lost: false } });
-    expect(r.defenders[1]).toMatchObject({ tribe: null, units: NATURE.split("\t"), sent: [8, 0, 4, 0, 12, 12, 12, 3, 9, 7], player: null, hero: null });
+    expect(r.defenders[1]).toMatchObject({ tribe: "Nature", units: NATURE.split("\t"), sent: [8, 0, 4, 0, 12, 12, 12, 3, 9, 7], player: null, hero: null });
   });
 
   it("reads a defence of an occupied oasis with its coordinates", () => {
@@ -177,15 +177,15 @@ describe("parseReport", () => {
     expect(r.wall).toEqual({ name: "City Wall", before: 20, after: 0, damaged: true });
     expect(r.info).toEqual(["City Wall level 20 destroyed", "Iron Foundry was not damaged."]);
     expect(r.attacker).toMatchObject({ tribe: "Gauls", lost: z([1, 425], [3, 393], [6, 26]), wounded: z([1, 170], [3, 157]), hero: { sent: true, lost: false } });
-    expect(r.defenders.map(d => d.tribe)).toEqual(["Romans", null]);
+    expect(r.defenders.map(d => d.tribe)).toEqual(["Romans", "Nature"]);
     expect(r.defenders[0].wounded).toEqual([128, 127, 99, 171, 112, 32, 0, 0, 0, 0]);
     expect(r.stats?.resourcesLost).toEqual([705405, 1219660]);
   });
 
-  it("reads a resource scout: resources and the cranny figure", () => {
+  it("reads a resource scout: resources and the cranny capacity", () => {
     const r = parseReport(RESOURCE_SCOUT)!;
     expect(r.type).toBe("scout");
-    expect(r.scouted).toEqual({ res: [8836, 6295, 8695, 1353], cranny: 0, buildings: [] });
+    expect(r.scouted).toEqual({ res: [8836, 6295, 8695, 1353], crannyCapacity: 0, buildings: [] });
     expect(r.loot).toBeNull();
     expect(r.wall).toBeNull();
     expect(r.attacker.sent).toEqual(z([3, 30]));
@@ -214,8 +214,14 @@ describe("reportArmy", () => {
     expect(reportArmy(r.attacker, "survived", z([0, 10]))).toEqual({ tribe: "Teutons", counts: z([0, 477], [5, 66]), smithy: z([0, 10]) });
   });
 
+  it("maps an animal reinforcement to Nature, so oasis fights can be simulated", () => {
+    expect(reportArmy(parseReport(SCOUT)!.defenders[1], "sent")).toEqual({ tribe: "Nature", counts: [8, 0, 4, 0, 12, 12, 12, 3, 9, 7] });
+  });
+
   it("is null for hidden troops or an unknown tribe", () => {
     expect(reportArmy(parseReport(RAID_LOST_HIDDEN)!.defenders[0], "sent")).toBeNull();
-    expect(reportArmy(parseReport(SCOUT)!.defenders[1], "sent")).toBeNull();
+    const other = parseReport(SCOUT.replace("Rat\tSpider", "Ratte\tSpinne"))!.defenders[1];
+    expect(other.tribe).toBeNull();
+    expect(reportArmy(other, "sent")).toBeNull();
   });
 });

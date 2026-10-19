@@ -19,7 +19,8 @@ src/
     celebrations.json   small and great celebration costs
     capacity.json       warehouse/granary capacity by level (0 = none)
     walls.json          wall name, defence factor and flat defence per level, by tribe
-    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY, WALLS
+    nature.json         Nature's animals (oasis defenders): att, defInf, defCav, upkeep. Not a tribe
+    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY, WALLS, NATURE, NATURE_TRIBE
   parse/
     overview.ts         parseOverview: reads a pasted copy of the game's village overview
     text.ts             shared helpers: cleanLines (drops direction marks), toInt, NUM/SNUM/NUM_LINE/COORD patterns
@@ -33,6 +34,7 @@ src/
     celebrations.ts     celebrationCost
     npc.ts              storageCaps, planNeeds, npcTargets
     combat.ts           upgraded, attackPower, defencePower, weightedDefence, wallBonus, wallDefence, morale, massFactor, lossShares, unitLosses, woundedOf, battle
+    optimize.ts         optimize (attack or defend army search), unitValue, armyValue, combatUnits, lootable, simplexGrid
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
     timing.ts           timeToAffordDirect, timeToAffordTrade, timeToFull, timeToEmpty
     format.ts           fmt, fmtTime, toNum, toSignedNum
@@ -51,12 +53,14 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 
 ## Rules
 - Keep calculation logic in `src/calc/` as pure functions with tests; `main.ts` only reads inputs and renders.
-- Do not reorder entries in `units.json`, `buildings.json` or `celebrations.json`: saved state stores indices. Append new entries at the end of a list.
+- Do not reorder entries in `units.json`, `buildings.json`, `celebrations.json` or `nature.json`: saved state and parsed reports use indices. Append new entries at the end of a list.
 - Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
 - A single troop row with no celebrations, every resource convertible and “Use an NPC trade” on must give exactly the results of the old single-unit version in each mode; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
 - Older saves had one village-wide troop `mode` (none/max/count/time) with shared hours and minutes. `normalizeTroops` gives each row its own mode and time on load; "none" becomes no rows. Keep it.
 - `[hidden] { display: none !important; }` in `style.css` makes the `hidden` attribute win over classes that set `display`. Keep it.
 - Form fields set `box-sizing: border-box` themselves, because Chrome doesn't pass it through to elements inside `<details>`.
+- Nature's animals live in `nature.json` (`NATURE`), never in `UNITS`, so the planner's tribe dropdown doesn't change. Combat and the parsers use the tribe key `NATURE_TRIBE` ("Nature") for them.
+- Parsing is English-only by decision: report titles, "from village", wall names and unit names are matched in English.
 - The paste import must stay something the user triggers by copying text. Travian's rules ban tools that automate or read the game directly.
 - `vite.config.ts` uses `base: "./"` so the build works under any GitHub Pages path, and `cssMinify: false` so the stylesheet ships as written.
 - Keep it dependency-free at runtime unless a feature clearly needs a library.
@@ -84,7 +88,15 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
   - Morale multiplies the attack, only when the attacker has more population: `max(0.667, round3((attPop / max(defPop, 3))^(-0.2 * min(1, off/def))))`.
   - Mass factor `k = 2 * (1.8592 - units^0.015)` within 1.2578..1.5, rounded to 0.0002, units = all troops of both sides (1.5 up to about 1,000 units).
   - With `x = (attack/def)^k`: normal attack, attacker loses `min(1, 1/x)` and defender `min(1, x)` (a tie kills both); raid, attacker `1/(1+x)` and defender `x/(1+x)`. Survivors per unit type are `round(count * (1 - share))`. A lone attacking unit with under 84.5 attack always dies.
+  - Animals (`tribe: "Nature"`) fight with their `nature.json` stats and upkeep 1, are never wounded (a real report shows no wounded row for them) and count 0 as resource value.
   - Wounded: the game's simulator shows a second losses row, `floor(0.4 * lost)` per unit type and 0 for siege. These are part of the losses (supply and resources lost count all of them), presumably the Legends hospital's healable troops. `battle()` returns them as `attackerWounded`/`defenderWounded`.
+- Optimizer (`optimize.ts`): attack (find the army to send against given defenders, wall and village tribe) or defend (find reinforcements so the village holds against a given attacker, with the troops already at home counted as ours). Troops are either owned (counts and smithy per village, as the Troops and Smithy tabs give) or optimal (any units of the tribe at given smithy levels, total cost of the four resources at most `cap`). Normal attack or raid.
+  - Unit value is the sum of its four costs. Own losses count wounded as lost unless `woundedRecoverable`; on defence our side is home troops plus reinforcements.
+  - Objectives: `fewestLosses` (must win), `smallestWin` (cheapest that wins), `mostEnemyLosses`, `mostLoot` (attacks: resources carried home minus own losses; carry of the survivors, limited to the scouted resources above the cranny capacity per resource). "Win" is `battle()`'s winner: attacker for attacks (raids too), defender for defence. An attack never sends nothing.
+  - Searched units: infantry and cavalry by default (`units` overrides); scouts, chiefs, settlers and siege are left out (rams wait for a ram model).
+  - Search: armies are a direction (mix of unit types) times a scale. Optimal mode: the direction shares the budget, `count = floor(budget * share / cost)`; owned mode: the direction is a fraction of each type's troops, `count = floor(t * fraction * available)`. Directions come from an even simplex grid (at most 130). Per direction an integer bisection finds the smallest winning scale, and a fixed ladder (budgets 100 × 1.25^j up to the cap, or t = 0.8^j) samples the rest. The 5 best distinct armies are refined by local search on whole units (± a step of one type, or trading one type for another within the cap), halving the step to 1. Every candidate is scored with `battle()`. Typically 1,000–10,000 battles, 5–50 ms on a desktop.
+  - Owned attacks search each village separately (Phase 5 will split attacks across villages); owned reinforcements combine villages, each as its own contingent with its own smithy.
+  - Output: the best army and up to 2 alternatives with another mix of unit types or a cost at least 10% apart, each with its `battle()` result, cost, own and enemy loss values, wounded value and loot.
 - Production per hour is entered per village (crop may be negative). Storage fills at `(cap - have) / production`; negative crop runs out at `have / -production`.
 - Time to afford (fixed plan, whichever way the switch is set). Without trading: the slowest missing resource, `(need - have) / production`; never if it isn't produced or doesn't fit in storage. Resources not to convert into are claimed from the hero and don't wait.
 - With an NPC trade: when the village's total reaches the need of the convertible resources. Each resource grows within its storage (production stops when full) and negative crop stops at 0, so the total is piecewise linear; `timeToAffordTrade` solves it exactly per stretch.
@@ -101,27 +113,28 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Combat checks against the game's simulator so far: infantry vs cavalry, mixed armies, all three classic walls at level 10, smithy 10, a 18,000-unit battle, a reinforcement of another tribe, normal and raid.
 - Morale is kirilloid's formula, unverified against the game: its Combat Simulator has no population input. It can only be checked with real reports where both populations are known.
 - The game shows combat strength with the attack rounded and the defence apparently rounded down; the tests allow 1 point.
-- The report parser's words are English: title verbs, "from village", wall names, "level", "destroyed". What the cranny figure in a resource scout means (capacity or level; 0 in the only sample) is unknown. Nature's animals have no stats in `units.json`, so oasis fights can't be simulated yet.
-- Rams are not modelled. In case 14, 20 rams with a losing attack left palisade 10 "not damaged", while kirilloid's ram formula would take it to 9; this needs more cases (winning attacks with rams) before Phase 3's "rams get through".
+- Nature's animal stats in `nature.json` are kirilloid's (T3 data, assumed unchanged in Legends); not yet checked against the game.
+- The optimizer is a heuristic search: it is not guaranteed to find the true optimum, though tests check it against hand-worked cases, that a bigger cap never scores worse on sample targets, and that every reported win is a win in `battle()`.
+- Rams are not modelled (see the ram cases under "Import reports and troops").
 - Other tribes' base training times are from memory; verify against the game.
 - Building construction time is not implemented (formula depends on main building level and per-building constants).
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
 
 ## Combat optimizer roadmap
-Phase 1 (done): combat data and the simulator in `combat.ts`.
-2. Paste parsers for battle, scout and defence reports and the village overview Troops tab: parsers done (`src/parse/report.ts`, `troops.ts`), no UI yet. Built from samples in `Report samples/` (git-ignored, like `Combat reports/`: they hold player and village names, so tests keep only anonymized structure and numbers).
-3. Optimizer in `src/calc/optimize.ts`: owned troops, or an "optimal" army of any units of your tribe under a resource cap; objectives: fewest losses by resource value, smallest winning army, most enemy losses, rams get through; normal attack and raid; attack and defend modes.
+1. Done: combat data and the simulator in `combat.ts`.
+2. Done: paste parsers for battle, scout and defence reports and the overview's Troops and Smithy tabs (`src/parse/report.ts`, `troops.ts`, `smithy.ts`), no UI yet. Built from samples in `Report samples/` (git-ignored, like `Combat reports/`: they hold player and village names, so tests keep only anonymized structure and numbers).
+3. Done: optimizer in `src/calc/optimize.ts` (see "Formulas in use"), no UI yet. Waiting: a "rams get through" objective, once ram damage is modelled from simulator runs with rams against each wall type, winning and losing.
 4. A separate `combat.html` page sharing saved villages and storage.
 5. Splitting the army across villages using coordinates and travel time.
 
 ## Import reports and troops
 The user copies a report or the overview's Troops tab ("Own troops") or Smithy tab, the whole page or just that part. Tested against English phone copies.
-- Unit tables are found by shape: a tab-separated line of exactly ten unit names (no digits), optionally followed by "Hero", then rows of ten or eleven numbers or "?". `tribeOf` matches the names against `units.json` ignoring case; Nature's animals (Rat … Elephant, seen as oasis or village reinforcements) and other languages give tribe null, with the names kept.
+- Unit tables are found by shape: a tab-separated line of exactly ten unit names (no digits), optionally followed by "Hero", then rows of ten or eleven numbers or "?". `tribeOf` matches the names against `units.json` ignoring case; Nature's animals (Rat … Elephant, seen as oasis or village reinforcements) give tribe `NATURE_TRIBE`; other languages give tribe null, with the names kept.
 - Report rows in order: sent, lost (wounded included), wounded (only when shown), and in one sample a fourth row of own troops freed from a trap ("You freed N own troops"). Survived = sent − lost. A row of "?" means hidden troops (`defenceHidden`). The first table is the attacker; the others are the defender's own troops, then each "Reinforcement" block (no player line).
 - The title line before the date (`19.10.26, 13:11:30`) gives the type: " attacks " normal, " raids " raid, " scouts " scout. The place line is `[TAG] player from village V`, with `(x|y)` in V for oases.
 - Between the attacker's table and the next: information lines (any line with a space), then the bounty (four numbers and `carried/capacity`). After the last table: four statistics pairs (combat strength, supply before, supply lost, resources lost), found by shape.
 - Wall from the information lines, by the names in `walls.json`: `Palisade level 10` (scout), `City Wall level 20 destroyed` and `Earth Wall damaged from level 15 to level 14` (rams), `Palisade was not damaged.` (simulator). Scout reports also list other buildings as `Name level N`.
-- A resource scout has `Resources` and six numbers after the attacker's table: wood, clay, iron, crop, the cranny figure, and the total (checked as the sum of the four) → `scouted.res` and `scouted.cranny`.
+- A resource scout has `Resources` and six numbers after the attacker's table: wood, clay, iron, crop, the cranny capacity, and the total (checked as the sum of the four) → `scouted.res` and `scouted.crannyCapacity`.
 - Troops tab: header `Village`, ten unit names, `Hero`; one row per village; the last row is the sum and is dropped.
 - Smithy tab: `Village / in progress / Research Level`, then the eight upgradable unit names (tribe by `tribeOfPrefix`); each row is the village, the unit being upgraded (`•` none, `-` no smithy) and a level per unit, `-` when not researched (level 0). `villageSmithy` gives ten levels for an army's `smithy`.
 

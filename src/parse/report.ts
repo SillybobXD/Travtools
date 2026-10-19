@@ -25,7 +25,7 @@ export type ReportType = "normal" | "raid" | "scout";
 
 /** One army in a report: unit counts by index into UNITS[tribe]. Rows the report hides or doesn't show are null. */
 export interface ReportArmy {
-  /** Tribe key as in units.json ("Teutons", "Romans", …), or null if the names don't match one (e.g. Nature's animals). */
+  /** Tribe key as in units.json ("Teutons", "Romans", …), NATURE_TRIBE ("Nature") for animals, or null if the names match neither. */
   tribe: string | null;
   /** The ten unit names as shown. */
   units: string[];
@@ -78,10 +78,10 @@ export interface BattleReport {
   /** Resources carried home and how much the survivors could carry. */
   loot: { res: Res4; carried: number; capacity: number } | null;
   /**
-   * What scouts saw. A resource scout lists wood, clay, iron, crop, then the cranny figure and the total
+   * What scouts saw. A resource scout lists wood, clay, iron, crop, then the cranny capacity and the total
    * (`Resources` then six numbers); a defence scout lists buildings as "Residence level 2". Absent parts are null or empty.
    */
-  scouted: { res: Res4 | null; cranny: number | null; buildings: { name: string; level: number }[] } | null;
+  scouted: { res: Res4 | null; crannyCapacity: number | null; buildings: { name: string; level: number }[] } | null;
   /** The information lines as written (wall and building damage, freed troops, …). */
   info: string[];
   stats: ReportStats | null;
@@ -184,11 +184,11 @@ export function parseReport(text: string): BattleReport | null {
 
   const buildings = info.flatMap(l => { const m = /^(.+?)\s+level\s+(\d+)$/i.exec(l); return m ? [{ name: m[1], level: +m[2] }] : []; });
   // Resource scout: six numbers in a row, the last being the sum of the first four.
-  let scoutRes: Res4 | null = null, cranny: number | null = null;
+  let scoutRes: Res4 | null = null, crannyCapacity: number | null = null;
   if (loot === null && firstNum >= 0) {
     const n = between.slice(firstNum, firstNum + 6);
     const v = n.map(toInt);
-    if (n.length === 6 && n.every(l => NUM_LINE.test(l)) && v[5] === v[0] + v[1] + v[2] + v[3]) { scoutRes = v.slice(0, 4) as Res4; cranny = v[4]; }
+    if (n.length === 6 && n.every(l => NUM_LINE.test(l)) && v[5] === v[0] + v[1] + v[2] + v[3]) { scoutRes = v.slice(0, 4) as Res4; crannyCapacity = v[4]; }
   }
 
   // Statistics: after the last table, four label lines each followed by an attacker and a defender number.
@@ -208,7 +208,7 @@ export function parseReport(text: string): BattleReport | null {
     defenceHidden: defenders.some(d => d.sent === null),
     wall: readWall(info),
     loot,
-    scouted: scoutRes || (type === "scout" && buildings.length) ? { res: scoutRes, cranny, buildings: type === "scout" ? buildings : [] } : null,
+    scouted: scoutRes || (type === "scout" && buildings.length) ? { res: scoutRes, crannyCapacity, buildings: type === "scout" ? buildings : [] } : null,
     info,
     stats,
   };

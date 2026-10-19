@@ -1,0 +1,12 @@
+[
+  {"name":"Rat","att":10,"defInf":25,"defCav":20,"upkeep":1},
+  {"name":"Spider","att":20,"defInf":35,"defCav":40,"upkeep":1},
+  {"name":"Snake","att":60,"defInf":40,"defCav":60,"upkeep":1},
+  {"name":"Bat","att":80,"defInf":66,"defCav":50,"upkeep":1},
+  {"name":"Wild Boar","att":50,"defInf":70,"defCav":33,"upkeep":1},
+  {"name":"Wolf","att":100,"defInf":80,"defCav":70,"upkeep":1},
+  {"name":"Bear","att":250,"defInf":140,"defCav":200,"upkeep":1},
+  {"name":"Crocodile","att":450,"defInf":380,"defCav":240,"upkeep":1},
+  {"name":"Tiger","att":200,"defInf":170,"defCav":250,"upkeep":1},
+  {"name":"Elephant","att":600,"defInf":440,"defCav":520,"upkeep":1}
+]
