@@ -23,9 +23,10 @@ src/
   parse/
     overview.ts         parseOverview: reads a pasted copy of the game's village overview
     text.ts             shared helpers: cleanLines (drops direction marks), toInt, NUM/SNUM/NUM_LINE/COORD patterns
-    units.ts            unitHeader, tribeOf: recognise a tribe from a row of ten unit names
+    units.ts            unitHeader, tribeOf, tribeOfPrefix: recognise a tribe from a row of unit names
     report.ts           parseReport: battle, raid, scout and defence reports; reportArmy
     troops.ts           parseTroops: troops per village from the overview's Troops tab; villageArmy
+    smithy.ts           parseSmithy: smithy levels per village from the overview's Smithy tab; villageSmithy
   calc/                 pure functions, no DOM access
     buildings.ts        round5, levelCost, rangeCost, buildingTotals
     troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, maxTroopMixDirect, planTroops, mixDuration
@@ -100,7 +101,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Combat checks against the game's simulator so far: infantry vs cavalry, mixed armies, all three classic walls at level 10, smithy 10, a 18,000-unit battle, a reinforcement of another tribe, normal and raid.
 - Morale is kirilloid's formula, unverified against the game: its Combat Simulator has no population input. It can only be checked with real reports where both populations are known.
 - The game shows combat strength with the attack rounded and the defence apparently rounded down; the tests allow 1 point.
-- The report parser's words are English: title verbs, "from village", wall names, "level", "destroyed". Resource scouting reports and partial wall damage have no sample yet. Nature's animals have no stats in `units.json`, so oasis fights can't be simulated yet.
+- The report parser's words are English: title verbs, "from village", wall names, "level", "destroyed". What the cranny figure in a resource scout means (capacity or level; 0 in the only sample) is unknown. Nature's animals have no stats in `units.json`, so oasis fights can't be simulated yet.
 - Rams are not modelled. In case 14, 20 rams with a losing attack left palisade 10 "not damaged", while kirilloid's ram formula would take it to 9; this needs more cases (winning attacks with rams) before Phase 3's "rams get through".
 - Other tribes' base training times are from memory; verify against the game.
 - Building construction time is not implemented (formula depends on main building level and per-building constants).
@@ -114,17 +115,23 @@ Phase 1 (done): combat data and the simulator in `combat.ts`.
 5. Splitting the army across villages using coordinates and travel time.
 
 ## Import reports and troops
-The user copies a report or the overview's Troops tab ("Own troops"), the whole page or just that part. Tested against English phone copies.
+The user copies a report or the overview's Troops tab ("Own troops") or Smithy tab, the whole page or just that part. Tested against English phone copies.
 - Unit tables are found by shape: a tab-separated line of exactly ten unit names (no digits), optionally followed by "Hero", then rows of ten or eleven numbers or "?". `tribeOf` matches the names against `units.json` ignoring case; Nature's animals (Rat … Elephant, seen as oasis or village reinforcements) and other languages give tribe null, with the names kept.
 - Report rows in order: sent, lost (wounded included), wounded (only when shown), and in one sample a fourth row of own troops freed from a trap ("You freed N own troops"). Survived = sent − lost. A row of "?" means hidden troops (`defenceHidden`). The first table is the attacker; the others are the defender's own troops, then each "Reinforcement" block (no player line).
 - The title line before the date (`19.10.26, 13:11:30`) gives the type: " attacks " normal, " raids " raid, " scouts " scout. The place line is `[TAG] player from village V`, with `(x|y)` in V for oases.
 - Between the attacker's table and the next: information lines (any line with a space), then the bounty (four numbers and `carried/capacity`). After the last table: four statistics pairs (combat strength, supply before, supply lost, resources lost), found by shape.
-- Wall from the information lines, by the names in `walls.json`: `Palisade level 10` (scout), `City Wall level 20 destroyed` (rams), `Palisade was not damaged.` (simulator). Scout reports also list other buildings as `Name level N`.
+- Wall from the information lines, by the names in `walls.json`: `Palisade level 10` (scout), `City Wall level 20 destroyed` and `Earth Wall damaged from level 15 to level 14` (rams), `Palisade was not damaged.` (simulator). Scout reports also list other buildings as `Name level N`.
+- A resource scout has `Resources` and six numbers after the attacker's table: wood, clay, iron, crop, the cranny figure, and the total (checked as the sum of the four) → `scouted.res` and `scouted.cranny`.
 - Troops tab: header `Village`, ten unit names, `Hero`; one row per village; the last row is the sum and is dropped.
+- Smithy tab: `Village / in progress / Research Level`, then the eight upgradable unit names (tribe by `tribeOfPrefix`); each row is the village, the unit being upgraded (`•` none, `-` no smithy) and a level per unit, `-` when not researched (level 0). `villageSmithy` gives ten levels for an army's `smithy`.
 
 What the samples showed:
-- Wounded in real reports follow the simulator: `floor(0.4 * lost)` per unit, 0 for rams and catapults. The row is missing in some reports (a raid losing 1 unit, a raid losing all 5), so a third row is wounded only by position.
-- Rams: 67 Gaul rams (26 lost) with 1,107 Swordsmen and 1,022 Theutates Thunders and a hero, against 1,700 Roman troops plus 41 animals: "City Wall level 20 destroyed", with combat strength 225,286 vs 116,678. A winning attack can take a level 20 wall to 0; a losing one (simulator case 14, 20 rams) did no damage. Partial damage wording ("from level A to B"?) has no sample yet.
+- Wounded in most real reports follow the simulator: `floor(0.4 * lost)` per unit, 0 for rams and catapults. Not always: in the partial wall damage report a Gaul reinforcement lost 450 Phalanxes and 50 Druidriders with only 60 and 0 wounded, and the attacker (lost 33 + 178 + 201 + 29 siege) had no wounded row at all; presumably the hospital's level or space limits it. The row is also missing in some raids, so a third row is wounded only by position.
+- Rams, three cases, compared with kirilloid's T4 ram formula (`4 * sigma(off/def) * floor(rams / durability)` demolish points, `sigma(x) = (2 - x^-1.5)/2` above 1 and `x^1.5/2` below; each wall level costs its level number; ram smithy assumed 0; off/def from the combat strength shown):
+  - 67 Gaul rams (26 lost) win against a Roman City Wall 20 (225,286 vs 116,678): destroyed, 20 → 0. Formula: 218 points → 0. Matches, but only just (210.5 needed).
+  - 28 Gaul rams (17 lost) win against a Teuton Earth Wall 15 (58,092 vs 42,060): 15 → 14. Formula: 77.5 points → 9. Does not match; it would fit if the Earth Wall's durability divided the rams by about 3 or 4 (ram smithy above 0 would make the gap bigger).
+  - 20 Teuton rams lose against a Gaul Palisade 10 (simulator case 14, 5,300 vs 9,395): not damaged. Formula: 17 points → 9. Does not match.
+  So kirilloid's formula with durability 1 for every wall is not reliable; rams are not modelled. Teuton Earth Wall durability (and whether losing attacks damage walls at all) needs more cases, ideally simulator runs with rams and known smithy.
 - Hero: the report shows only a 0/1 hero column, never its strength or items. Combat strength includes it: 930 Clubswingers + 180 Axemen with a hero show 49,370 against 48,000 from the units, so the hero added about 1,370 (smithy unknown).
 - Defence we don't model yet: an empty Teuton village defended with 373, and an occupied oasis's 55 Spearmen + 23 Paladins with 4,360 instead of about 4,234 (smithy, residence/palace or oasis bonus unknown).
 

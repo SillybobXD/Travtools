@@ -71,13 +71,17 @@ export interface BattleReport {
   defenceHidden: boolean;
   /**
    * Wall level, when an information line names the defender's wall: "Palisade level 10" (scouts: before = after),
-   * "City Wall level 20 destroyed" (after 0), "Palisade was not damaged." (levels unknown, damaged false).
+   * "City Wall level 20 destroyed" (after 0), "Earth Wall damaged from level 15 to level 14",
+   * "Palisade was not damaged." (levels unknown, damaged false).
    */
   wall: { name: string; before: number | null; after: number | null; damaged: boolean | null } | null;
   /** Resources carried home and how much the survivors could carry. */
   loot: { res: Res4; carried: number; capacity: number } | null;
-  /** Buildings a scout saw ("Residence level 2"); null when the report has none. Resource scouting has no sample yet. */
-  scouted: { buildings: { name: string; level: number }[] } | null;
+  /**
+   * What scouts saw. A resource scout lists wood, clay, iron, crop, then the cranny figure and the total
+   * (`Resources` then six numbers); a defence scout lists buildings as "Residence level 2". Absent parts are null or empty.
+   */
+  scouted: { res: Res4 | null; cranny: number | null; buildings: { name: string; level: number }[] } | null;
   /** The information lines as written (wall and building damage, freed troops, …). */
   info: string[];
   stats: ReportStats | null;
@@ -136,12 +140,17 @@ function readArmy(b: Block): ReportArmy {
   };
 }
 
-/** Wall line from the information: "Palisade level 10", "City Wall level 20 destroyed", "Palisade was not damaged." */
+/**
+ * Wall line from the information: "Palisade level 10", "City Wall level 20 destroyed",
+ * "Earth Wall damaged from level 15 to level 14", "Palisade was not damaged."
+ */
 function readWall(info: string[]): BattleReport["wall"] {
   for (const line of info) {
     const name = WALL_NAMES.find(w => line.toLowerCase().startsWith(w));
     if (!name) continue;
     const wall = line.slice(0, name.length);
+    const from = /from\s+level\s+(\d+)\s+to\s+level\s+(\d+)/i.exec(line);
+    if (from) return { name: wall, before: +from[1], after: +from[2], damaged: +from[2] < +from[1] };
     const m = /level\s+(\d+)(\s+destroyed)?/i.exec(line);
     if (m) return m[2]
       ? { name: wall, before: +m[1], after: 0, damaged: true }
@@ -174,6 +183,13 @@ export function parseReport(text: string): BattleReport | null {
   const info = between.slice(0, firstNum < 0 ? between.length : firstNum).filter(l => /\s/.test(l) && !l.startsWith("["));
 
   const buildings = info.flatMap(l => { const m = /^(.+?)\s+level\s+(\d+)$/i.exec(l); return m ? [{ name: m[1], level: +m[2] }] : []; });
+  // Resource scout: six numbers in a row, the last being the sum of the first four.
+  let scoutRes: Res4 | null = null, cranny: number | null = null;
+  if (loot === null && firstNum >= 0) {
+    const n = between.slice(firstNum, firstNum + 6);
+    const v = n.map(toInt);
+    if (n.length === 6 && n.every(l => NUM_LINE.test(l)) && v[5] === v[0] + v[1] + v[2] + v[3]) { scoutRes = v.slice(0, 4) as Res4; cranny = v[4]; }
+  }
 
   // Statistics: after the last table, four label lines each followed by an attacker and a defender number.
   const pairs: [number, number][] = [];
@@ -192,7 +208,7 @@ export function parseReport(text: string): BattleReport | null {
     defenceHidden: defenders.some(d => d.sent === null),
     wall: readWall(info),
     loot,
-    scouted: type === "scout" && buildings.length ? { buildings } : null,
+    scouted: scoutRes || (type === "scout" && buildings.length) ? { res: scoutRes, cranny, buildings: type === "scout" ? buildings : [] } : null,
     info,
     stats,
   };

@@ -31,3 +31,10 @@ export function unitHeader(cells: string[]): UnitHeader | null {
   const units = c.slice(0, 10);
   return { tribe: tribeOf(units), units, hero };
 }
+
+/** The tribe whose first unit names match these (e.g. the eight units a smithy upgrades), ignoring case; null if none or several do. */
+export function tribeOfPrefix(names: string[]): string | null {
+  const n = names.map(norm);
+  const hits = Object.entries(UNITS).filter(([, units]) => n.length > 0 && n.length <= units.length && n.every((x, i) => norm(units[i].name) === x));
+  return hits.length === 1 ? hits[0][0] : null;
+}

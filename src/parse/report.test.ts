@@ -85,6 +85,30 @@ const RAMS_WALL_DESTROYED = page(
   ...STATS([["225,286", "116,678"], ["3,364", "3,012"], ["1,289", "3,012"], ["705,405", "1,219,660"]]),
 );
 
+const RESOURCE_SCOUT = page(
+  "Village A scouts Village B", "19.10.26, 12:26:44", "", "", "",
+  "Attacker", "[AAA] Player A from village Village A", "", TEUTONS,
+  row(0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0), row(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  "Resources	", b(8836), b(6295), b(8695), b(1353), b(0), b(25179),
+  "Defender", "[ ] Player B from village Village B", GAULS,
+  row(94, 104, 1, 29, 154, 38, 0, 0, 0, 0, 1), row(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  "Defender", "Reinforcement", NATURE,
+  row(8, 0, 4, 0, 12, 12, 12, 3, 9, 7), row(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+);
+
+const WALL_DAMAGED = page(
+  "Village A attacks Village B", "13.10.26, 11:21:05", "",
+  "Attacker", "[AAA] Player A from village Village A", GAULS,
+  row(54, 288, 0, 325, 0, 0, 28, 20, 0, 0, 0), row(33, 178, 0, 201, 0, 0, 17, 12, 0, 0, 0),
+  "Information	", " Earth Wall damaged from level 15 to level 14", " Workshop level 1 destroyed",
+  "Bounty	", b(0), b(0), b(0), b(0), `${b(0)}/${b(14985)}`,
+  "Defender", "[BBB] Player B from village Village B", TEUTONS,
+  row(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), row(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  "Defender", "Reinforcement", GAULS,
+  row(450, 0, 0, 0, 50, 0, 0, 0, 0, 0, 1), row(450, 0, 0, 0, 50, 0, 0, 0, 0, 0, 1), row(60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  ...STATS([["58,092", "42,060"], ["1,196", "556"], ["736", "556"], ["394,745", "196,250"]]),
+);
+
 const z = (...set: [number, number][]) => { const a = Array(10).fill(0); for (const [i, n] of set) a[i] = n; return a; };
 
 describe("parseReport", () => {
@@ -156,6 +180,25 @@ describe("parseReport", () => {
     expect(r.defenders.map(d => d.tribe)).toEqual(["Romans", null]);
     expect(r.defenders[0].wounded).toEqual([128, 127, 99, 171, 112, 32, 0, 0, 0, 0]);
     expect(r.stats?.resourcesLost).toEqual([705405, 1219660]);
+  });
+
+  it("reads a resource scout: resources and the cranny figure", () => {
+    const r = parseReport(RESOURCE_SCOUT)!;
+    expect(r.type).toBe("scout");
+    expect(r.scouted).toEqual({ res: [8836, 6295, 8695, 1353], cranny: 0, buildings: [] });
+    expect(r.loot).toBeNull();
+    expect(r.wall).toBeNull();
+    expect(r.attacker.sent).toEqual(z([3, 30]));
+  });
+
+  it("reads a wall damaged by some levels, and a reinforcement whose hero died", () => {
+    const r = parseReport(WALL_DAMAGED)!;
+    expect(r.wall).toEqual({ name: "Earth Wall", before: 15, after: 14, damaged: true });
+    expect(r.info).toEqual(["Earth Wall damaged from level 15 to level 14", "Workshop level 1 destroyed"]);
+    expect(r.scouted).toBeNull();
+    expect(r.attacker).toMatchObject({ lost: z([0, 33], [1, 178], [3, 201], [6, 17], [7, 12]), wounded: null });
+    expect(r.defenders[1]).toMatchObject({ tribe: "Gauls", player: null, lost: z([0, 450], [4, 50]), wounded: z([0, 60]), hero: { sent: true, lost: true } });
+    expect(r.stats?.strength).toEqual([58092, 42060]);
   });
 
   it("parses the report alone, without the page around it", () => {
