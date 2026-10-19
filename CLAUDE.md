@@ -18,7 +18,7 @@ src/
     merchants.json      merchant capacity and speed per tribe
     celebrations.json   small and great celebration costs
     capacity.json       warehouse/granary capacity by level (0 = none)
-    walls.json          wall name and defence factor per level, by tribe
+    walls.json          wall name, defence factor and flat defence per level, by tribe
     index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY, WALLS
   parse/
     overview.ts         parseOverview: reads a pasted copy of the game's village overview
@@ -27,7 +27,7 @@ src/
     troops.ts           trainingTime, maxTroops, troopsForTime, maxTroopMix, maxTroopMixDirect, planTroops, mixDuration
     celebrations.ts     celebrationCost
     npc.ts              storageCaps, planNeeds, npcTargets
-    combat.ts           upgraded, attackPower, defencePower, weightedDefence, wallBonus, morale, massFactor, lossShares, unitLosses, battle
+    combat.ts           upgraded, attackPower, defencePower, weightedDefence, wallBonus, wallDefence, morale, massFactor, lossShares, unitLosses, woundedOf, battle
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
     timing.ts           timeToAffordDirect, timeToAffordTrade, timeToFull, timeToEmpty
     format.ts           fmt, fmtTime, toNum, toSignedNum
@@ -72,13 +72,14 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Celebrations: fixed cost per celebration (small 6,400 / 6,650 / 5,940 / 1,340, great 29,700 / 33,250 / 32,000 / 6,700).
 - NPC leftover goes to the preferred resource first, then crop, wood, clay, iron, within capacity.
 - Merchant travel time: `distance / (merchantSpeed * serverSpeed)`.
-- Combat (`combat.ts`, the community T4 model; no hero, artifacts, alliance bonuses, scouting or building damage yet). Armies are plain `{ tribe, counts[], smithy[] }` by unit index; the defence is a list of such contingents (the village's own troops plus reinforcements of any tribe).
-  - Smithy: `value + (value + 300 * upkeep / 7) * (1.007^level - 1)` for attack and both defences.
+- Combat (`combat.ts`): the T4 model of kirilloid's simulator (github.com/kirilloid/travian, `src/model/t4/combat`), checked against 13 runs of the game's own Combat Simulator (`combat.test.ts`). No hero, artifacts, alliance bonuses, residence/palace defence, scouting or building damage yet. Armies are plain `{ tribe, counts[], smithy[] }` by unit index; the defence is a list of such contingents (the village's own troops plus reinforcements of any tribe).
+  - Unit value with smithy, `u = upkeep / 1.007`: `value + (value + 300u/7) * (1.007^level - 1) + 0.0021u`, rounded to 4 decimals, for attack and both defences. Even level 0 is slightly above the base (Clubswinger 40.0021), which the game shows: 10,000 Clubswingers have 400,021 attack.
   - Attack splits into infantry and cavalry by `kind`: only `cav` is cavalry; scouts, siege and admin units (chiefs, settlers) attack as infantry.
-  - Defence: `(defInf * offInf/off + defCav * offCav/off + base) * wall * morale`, with base village defence 10 and wall = the village owner's `walls.json` factor ^ level (Roman 1.03, Teuton 1.02, Gaul and Egyptian 1.025, Hun 1.015, Spartan 1.02).
-  - Morale, only when the attacker has more population: `min(1.5, (attPop/defPop)^(0.2 * min(1, off/def)))`, multiplying defence.
-  - Mass factor `k = 2 * (1.8592 - units^0.015)` within 1.2578..1.5, units = all troops of both sides (1.5 up to about 1,000 units).
-  - Normal attack: the stronger side wins (defender on a tie); the loser loses everything, the winner `(loser/winner)^k`. Raid: `x = (off/def)^k`, attacker loses `1/(1+x)`, defender `x/(1+x)`. Each unit type's losses are `round(count * share)`.
+  - Defence: `(defInf * infShare + defCav * cavShare + 10 + wallDef * level) * round3(wallFactor^level)`, shares rounded to 4 decimals. Wall per village owner's tribe (`walls.json`): Roman 1.03 and +10 per level, Teuton 1.02 and +6, Gaul 1.025 and +8, Egyptian 1.025 and +8, Hun 1.015 and +6.
+  - Morale multiplies the attack, only when the attacker has more population: `max(0.667, round3((attPop / max(defPop, 3))^(-0.2 * min(1, off/def))))`.
+  - Mass factor `k = 2 * (1.8592 - units^0.015)` within 1.2578..1.5, rounded to 0.0002, units = all troops of both sides (1.5 up to about 1,000 units).
+  - With `x = (attack/def)^k`: normal attack, attacker loses `min(1, 1/x)` and defender `min(1, x)` (a tie kills both); raid, attacker `1/(1+x)` and defender `x/(1+x)`. Survivors per unit type are `round(count * (1 - share))`. A lone attacking unit with under 84.5 attack always dies.
+  - Wounded: the game's simulator shows a second losses row, `floor(0.4 * lost)` per unit type and 0 for siege. These are part of the losses (supply and resources lost count all of them), presumably the Legends hospital's healable troops. `battle()` returns them as `attackerWounded`/`defenderWounded`.
 - Production per hour is entered per village (crop may be negative). Storage fills at `(cap - have) / production`; negative crop runs out at `have / -production`.
 - Time to afford (fixed plan, whichever way the switch is set). Without trading: the slowest missing resource, `(need - have) / production`; never if it isn't produced or doesn't fit in storage. Resources not to convert into are claimed from the hero and don't wait.
 - With an NPC trade: when the village's total reaches the need of the convertible resources. Each resource grows within its storage (production stops when full) and negative crop stops at 0, so the total is piecewise linear; `timeToAffordTrade` solves it exactly per stretch.
@@ -91,8 +92,10 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - The paste import is tested against an English phone copy only. Other languages should work (numbers and the sum row are found without relying on words), but the “Population” fallback for finding the active village is English-only.
 - The map size (401) is fixed; servers with a different map size would need it as a setting.
 - Spartan unit costs are unverified; Spartan base training times are blank (0).
-- Combat stats in `units.json` (att, defInf, defCav, speed, carry) are standard values from memory, not checked against the game; Spartan ones especially. The Spartan wall factor (1.02) is a guess.
-- The combat formulas (smithy, base defence 10, morale with the off/def ratio, mass factor counting units rather than upkeep, rounding of losses) are not yet checked against real reports; `combat.test.ts` has a marked section for those cases. Rams lowering the wall before the battle is not modelled.
+- Combat stats in `units.json` (att, defInf, defCav, speed, carry): Romans, Teutons and Gauls match kirilloid's T4 data and the units used in the simulator cases match the game; Egyptians and Huns match kirilloid's Fire and Sand data. Theutates Thunder attack is 100 here but 90 in kirilloid's data: check in the game. Spartan stats and the Spartan wall (1.02, +6 per level) are guesses.
+- Combat checks against the game's simulator so far: infantry vs cavalry, mixed armies, all three classic walls at level 10, smithy 10, a 18,000-unit battle, a reinforcement of another tribe, normal and raid. Morale (case 11) has not been run yet. In case 10 the copied inputs show wall 0 but the result only fits palisade 10, so that run probably still had case 7's wall.
+- The game shows combat strength with the attack rounded and the defence apparently rounded down; the tests allow 1 point.
+- Rams are not modelled. In case 14, 20 rams with a losing attack left palisade 10 "not damaged", while kirilloid's ram formula would take it to 9; this needs more cases (winning attacks with rams) before Phase 3's "rams get through".
 - Other tribes' base training times are from memory; verify against the game.
 - Building construction time is not implemented (formula depends on main building level and per-building constants).
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).

@@ -34,6 +34,7 @@ describe("data files", () => {
       expect(w.name).toBeTruthy();
       expect(w.factor).toBeGreaterThan(1);
       expect(w.factor).toBeLessThan(1.05);
+      expect(Number.isInteger(w.def) && w.def > 0, w.name).toBe(true);
     }
   });
 

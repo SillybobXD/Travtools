@@ -1,8 +1,8 @@
 {
-  "Teutons": {"name":"Earth Wall","factor":1.02},
-  "Romans": {"name":"City Wall","factor":1.03},
-  "Gauls": {"name":"Palisade","factor":1.025},
-  "Egyptians": {"name":"Stone Wall","factor":1.025},
-  "Huns": {"name":"Makeshift Wall","factor":1.015},
-  "Spartans": {"name":"Defensive Wall","factor":1.02}
+  "Teutons": {"name":"Earth Wall","factor":1.02,"def":6},
+  "Romans": {"name":"City Wall","factor":1.03,"def":10},
+  "Gauls": {"name":"Palisade","factor":1.025,"def":8},
+  "Egyptians": {"name":"Stone Wall","factor":1.025,"def":8},
+  "Huns": {"name":"Makeshift Wall","factor":1.015,"def":6},
+  "Spartans": {"name":"Defensive Wall","factor":1.02,"def":6}
 }

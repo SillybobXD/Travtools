@@ -50,8 +50,9 @@ export interface Celebration {
   townHall: number;
 }
 
-/** A tribe's wall: defence is multiplied by factor^level. */
+/** A tribe's wall: adds `def * level` to the village's base defence, then multiplies all defence by factor^level. */
 export interface Wall {
   name: string;
   factor: number;
+  def: number;
 }

@@ -2,11 +2,11 @@ import { UNITS, WALLS } from "../data";
 import type { Unit } from "../types";
 
 /*
- * Travian Legends combat, following the long-standing community model of the
- * T4 battle formulas (as used by kirilloid's simulator). Not yet checked
- * against real reports: see the marked section in combat.test.ts.
- * Hero, artifacts, alliance bonuses, rams/catapults hitting buildings and
- * scouting are not modelled.
+ * Travian Legends combat, following the T4 model of kirilloid's simulator
+ * (github.com/kirilloid/travian, src/model/t4/combat), checked against the
+ * game's own Combat Simulator in combat.test.ts.
+ * Hero, artifacts, alliance bonuses, residence/palace defence, rams and
+ * catapults hitting buildings, and scouting are not modelled.
  */
 
 /** Troops of one tribe: count per unit index, smithy level per unit index (missing = 0). */
@@ -32,7 +32,7 @@ export interface BattleInput {
   village: {
     tribe: string;
     wall?: number;
-    /** Defence the village has without troops; defaults to BASE_DEFENCE. */
+    /** Defence the village has without troops or wall; defaults to BASE_DEFENCE. */
     baseDefence?: number;
   };
   mode: BattleMode;
@@ -43,11 +43,15 @@ export interface BattleInput {
 
 export interface BattleResult {
   winner: "attacker" | "defender";
-  /** Attack points by kind, smithy included. */
+  /** Attack points by kind, smithy included, before morale. */
   off: Split;
-  /** Final defence: unit defence weighted by the attack's split, plus base defence, times wall and morale. */
+  /** Final attack: off.inf + off.cav, times morale. */
+  attack: number;
+  /** Final defence: unit defence weighted by the attack's split, plus base and wall defence, times the wall bonus. */
   def: number;
+  /** Wall multiplier. */
   wall: number;
+  /** Attack multiplier, 0.667..1. */
   morale: number;
   /** Exponent from the number of troops in the battle (1.5 for small battles). */
   massFactor: number;
@@ -58,10 +62,19 @@ export interface BattleResult {
   attackerLosses: number[];
   /** Units lost per defending contingent, in the order given. */
   defenderLosses: number[][];
+  /** Of the units lost, how many the game lists as wounded (WOUNDED_SHARE, rounded down). */
+  attackerWounded: number[];
+  defenderWounded: number[][];
 }
 
 /** A village without troops still defends with 10 points (before the wall). */
 export const BASE_DEFENCE = 10;
+/** The game's simulator lists 40% of each unit type's losses (rounded down) as wounded; siege units are never wounded. */
+export const WOUNDED_SHARE = 0.4;
+
+const round = (precision: number) => (n: number) => Math.round(n / precision) * precision;
+const round4 = round(1e-4);
+const round3 = round(1e-3);
 
 const unitsOf = (tribe: string): Unit[] => {
   const units = UNITS[tribe];
@@ -70,11 +83,14 @@ const unitsOf = (tribe: string): Unit[] => {
 };
 
 /**
- * Attack or defence value after smithy upgrades:
- * `value + (value + 300 * upkeep / 7) * (1.007^level - 1)`.
+ * A unit's attack or defence value with smithy upgrades, rounded to 4 decimals.
+ * With `u = upkeep / 1.007`: `value + (value + 300 * u / 7) * (1.007^level - 1) + u * 0.0021`.
+ * The last term makes even level 0 slightly above the base value (Clubswinger 40.0021),
+ * which shows in the game's combat strength for large armies.
  */
 export function upgraded(value: number, upkeep: number, level: number): number {
-  return level > 0 ? value + (value + 300 * upkeep / 7) * (1.007 ** level - 1) : value;
+  const u = upkeep / 1.007;
+  return round4(value + (value + 300 * u / 7) * (1.007 ** level - 1) + u * 0.0021);
 }
 
 /** Attack points split into infantry and cavalry. Only "cav" units count as cavalry; scouts, siege and admin units attack as infantry. */
@@ -107,64 +123,78 @@ export function defencePower(armies: Army[]): Split {
 }
 
 /**
- * Defence weighted by the attack's mix: `defInf * offInf / off + defCav * offCav / off`.
+ * Defence weighted by the attack's mix: `defInf * infShare + defCav * cavShare`,
+ * shares `offInf / off` and `offCav / off` rounded to 4 decimals.
  * With no attack points it counts as infantry.
  */
 export function weightedDefence(def: Split, off: Split): number {
   const total = off.inf + off.cav;
-  return total > 0 ? (def.inf * off.inf + def.cav * off.cav) / total : def.inf;
+  if (!(total > 0)) return def.inf;
+  return def.inf * round4(off.inf / total) + def.cav * round4(off.cav / total);
 }
 
-/** Wall multiplier: the village owner's wall factor ^ level (e.g. Roman city wall 1.03^level). */
-export function wallBonus(tribe: string, level: number): number {
+const wallOf = (tribe: string) => {
   const wall = WALLS[tribe];
   if (!wall) throw new Error(`Unknown tribe: ${tribe}`);
-  return level > 0 ? wall.factor ** level : 1;
+  return wall;
+};
+
+/** Wall multiplier: the village owner's wall factor ^ level, rounded to 3 decimals (Palisade 10: 1.280). */
+export function wallBonus(tribe: string, level: number): number {
+  return level > 0 ? round3(wallOf(tribe).factor ** level) : 1;
+}
+
+/** Flat defence the wall adds before the multiplier: `def * level` (Roman 10, Gaul 8, Teuton 6 per level). */
+export function wallDefence(tribe: string, level: number): number {
+  return level > 0 ? wallOf(tribe).def * level : 0;
 }
 
 /**
- * Morale: a defence multiplier when the attacker has more population.
- * `(attackerPop / defenderPop) ^ (0.2 * min(1, off / def))`, at most 1.5, 1 when the attacker is not bigger.
- * `off / def` (defence before morale) weakens morale when the attack is weaker than the defence.
+ * Morale: an attack multiplier when the attacker has more population.
+ * `(attackerPop / max(defenderPop, 3)) ^ (-0.2 * min(1, off / def))`, rounded to 3 decimals, at least 0.667;
+ * 1 when the attacker is not bigger. `off / def` is before morale, so a weak attack is hit less.
  */
 export function morale(attackerPop: number, defenderPop: number, off: number, def: number): number {
   if (!(attackerPop > defenderPop) || !(defenderPop > 0)) return 1;
   const ratio = def > 0 ? Math.min(1, off / def) : 1;
-  return Math.min(1.5, (attackerPop / defenderPop) ** (0.2 * ratio));
+  return Math.max(0.667, round3((attackerPop / Math.max(defenderPop, 3)) ** (-0.2 * ratio)));
 }
 
 /**
  * Exponent for losses, from the number of units on both sides:
- * `2 * (1.8592 - units^0.015)`, kept within 1.2578..1.5.
+ * `2 * (1.8592 - units^0.015)`, kept within 1.2578..1.5 and rounded to 0.0002.
  * It is 1.5 up to about 1,000 units and falls to 1.2578 at about 1,000,000,
  * so in very large battles the winner loses more.
  */
 export function massFactor(units: number): number {
   const k = 2 * (1.8592 - Math.max(0, units) ** 0.015);
-  return Math.min(1.5, Math.max(1.2578, k));
+  return round(0.0002)(Math.min(1.5, Math.max(1.2578, k)));
 }
 
 /**
- * Share of each side lost, from attack and final defence points and the mass factor `k`.
- * Normal attack: the stronger side wins (the defender on a tie), the loser loses everything
- * and the winner loses `(loser / winner)^k`.
- * Raid: with `x = (off / def)^k` the attacker loses `1 / (1 + x)` and the defender `x / (1 + x)`.
+ * Share of each side lost, from final attack and defence points and the mass factor `k`.
+ * With `x = (off / def)^k`:
+ * normal attack: attacker loses `min(1, 1/x)`, defender `min(1, x)` (on a tie both lose everything);
+ * raid: attacker loses `1 / (1 + x)`, defender `x / (1 + x)`.
  */
 export function lossShares(off: number, def: number, mode: BattleMode, k: number): { attacker: number; defender: number } {
   if (!(def > 0)) return { attacker: 0, defender: off > 0 ? 1 : 0 };
   if (!(off > 0)) return { attacker: 1, defender: 0 };
-  if (mode === "raid") {
-    const x = (off / def) ** k;
-    return { attacker: 1 / (1 + x), defender: x / (1 + x) };
-  }
-  return off > def
-    ? { attacker: (def / off) ** k, defender: 1 }
-    : { attacker: 1, defender: (off / def) ** k };
+  const x = (off / def) ** k;
+  return mode === "raid"
+    ? { attacker: 1 / (1 + x), defender: x / (1 + x) }
+    : { attacker: Math.min(1, 1 / x), defender: Math.min(1, x) };
 }
 
-/** Units lost by index: each count times the share, rounded to the nearest unit. */
+/** Units lost by index: survivors are `round(count * (1 - share))`, the rest are lost. */
 export function unitLosses(counts: number[], share: number): number[] {
-  return counts.map(n => (n > 0 ? Math.round(n * share) : 0));
+  return counts.map(n => (n > 0 ? n - Math.round(n * (1 - share)) : 0));
+}
+
+/** Wounded among the units lost, as the game's simulator lists them: `floor(lost * 0.4)` per unit type, 0 for siege. */
+export function woundedOf(tribe: string, losses: number[]): number[] {
+  const units = unitsOf(tribe);
+  return losses.map((n, i) => (units[i]?.kind === "siege" ? 0 : Math.floor(n * WOUNDED_SHARE + 1e-9)));
 }
 
 const countUnits = (army: Army) => army.counts.reduce((s, n) => s + (n > 0 ? n : 0), 0);
@@ -173,23 +203,31 @@ const countUnits = (army: Army) => army.counts.reduce((s, n) => s + (n > 0 ? n :
 export function battle(input: BattleInput): BattleResult {
   const { attacker, defenders, village, mode } = input;
   const off = attackPower(attacker);
-  const offTotal = off.inf + off.cav;
-  const wall = wallBonus(village.tribe, village.wall ?? 0);
-  const before = (weightedDefence(defencePower(defenders), off) + (village.baseDefence ?? BASE_DEFENCE)) * wall;
-  const m = morale(input.attackerPop ?? 0, input.defenderPop ?? 0, offTotal, before);
-  const def = before * m;
+  const base = off.inf + off.cav;
+  const level = village.wall ?? 0;
+  const wall = wallBonus(village.tribe, level);
+  const def = (weightedDefence(defencePower(defenders), off) + (village.baseDefence ?? BASE_DEFENCE) + wallDefence(village.tribe, level)) * wall;
+  const m = morale(input.attackerPop ?? 0, input.defenderPop ?? 0, base, def);
+  const attack = base * m;
   const k = massFactor(countUnits(attacker) + defenders.reduce((s, a) => s + countUnits(a), 0));
-  const loss = lossShares(offTotal, def, mode, k);
+  const loss = lossShares(attack, def, mode, k);
+  // A single attacking unit with under 84.5 attack (after morale) always dies.
+  if (countUnits(attacker) === 1 && attack < 84.5) loss.attacker = 1;
+  const attackerLosses = unitLosses(attacker.counts, loss.attacker);
+  const defenderLosses = defenders.map(a => unitLosses(a.counts, loss.defender));
   return {
-    winner: offTotal > def ? "attacker" : "defender",
+    winner: attack > def ? "attacker" : "defender",
     off,
+    attack,
     def,
     wall,
     morale: m,
     massFactor: k,
     attackerLoss: loss.attacker,
     defenderLoss: loss.defender,
-    attackerLosses: unitLosses(attacker.counts, loss.attacker),
-    defenderLosses: defenders.map(a => unitLosses(a.counts, loss.defender)),
+    attackerLosses,
+    defenderLosses,
+    attackerWounded: woundedOf(attacker.tribe, attackerLosses),
+    defenderWounded: defenderLosses.map((l, i) => woundedOf(defenders[i].tribe, l)),
   };
 }
