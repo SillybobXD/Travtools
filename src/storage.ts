@@ -115,14 +115,28 @@ export interface Store {
   culture?: CultureState;
 }
 
-/** A one-off culture point gain on the expansion page. Blank `cp` means the default for its kind. */
+/** A one-off culture point gain on the expansion page (an Artwork). Blank `cp` means the default for its kind. */
 export interface CultureEvent {
+  /** Older saves also kept celebrations here; `cultureOf` moves them to `celebs`. */
   kind: "small" | "great" | "artwork";
   /** When it happens (ms). */
   at: number;
   cp: string;
   /** Game name of the celebrating village (its CP per day limits a small celebration). */
   village?: string;
+}
+
+/** One village's celebrations: the current (or next) one ends at `at`, then more back to back if `repeat`. */
+export interface CultureCeleb {
+  /** Game name of the village (its CP per day limits a small celebration). */
+  village?: string;
+  kind: "small" | "great";
+  at: number;
+  /** Town Hall level, which sets how long each celebration lasts. */
+  th: string;
+  repeat: boolean;
+  /** Blank means the default for its kind. */
+  cp: string;
 }
 
 /** The expansion page's inputs, kept as typed. Account-wide. */
@@ -142,6 +156,9 @@ export interface CultureState {
   quest: boolean;
   /** Next daily quest culture point reward (ms). */
   questAt?: number;
+  /** Celebrations per village. */
+  celebs: CultureCeleb[];
+  /** Artworks. */
   events: CultureEvent[];
   /** From the overview's Culture points tab, by game name: CP per day and settlement slots used/total. */
   villageCp: Record<string, { cp: number; slots?: [number, number] }>;
@@ -185,7 +202,7 @@ export function combatOf(store: Store): CombatState {
 
 export function newCultureState(village: string): CultureState {
   return {
-    cp: "", need: "", villages: "", hero: "0", alliance: "", quest: false, events: [], villageCp: {},
+    cp: "", need: "", villages: "", hero: "0", alliance: "", quest: false, celebs: [], events: [], villageCp: {},
     village, building: "Residence", level: "", used: "", buildH: "", buildM: "", settlers: "3",
   };
 }
@@ -194,6 +211,10 @@ export function newCultureState(village: string): CultureState {
 export function cultureOf(store: Store): CultureState {
   const c: CultureState = { ...newCultureState(store.current), ...(store.culture ?? {}) };
   c.events = (c.events ?? []).filter(e => typeof e.at === "number");
+  c.celebs ??= [];
+  // Celebrations used to be single events.
+  for (const e of c.events) if (e.kind !== "artwork") c.celebs.push({ village: e.village, kind: e.kind, at: e.at, th: "", repeat: false, cp: e.cp });
+  c.events = c.events.filter(e => e.kind === "artwork");
   c.villageCp ??= {};
   if (!store.villages[c.village]) c.village = store.current;
   store.culture = c;

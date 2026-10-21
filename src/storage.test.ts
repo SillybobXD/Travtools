@@ -100,4 +100,12 @@ describe("expansion state", () => {
     expect(c.village).toBe("a");
     expect(c.villageCp).toEqual({});
   });
+
+  it("moves celebrations from the old event list to their own rows", () => {
+    const s = store();
+    s.culture = { events: [{ kind: "small", at: 5, cp: "", village: "A" }, { kind: "artwork", at: 6, cp: "100" }] } as unknown as Store["culture"];
+    const c = cultureOf(s);
+    expect(c.celebs).toEqual([{ village: "A", kind: "small", at: 5, th: "", repeat: false, cp: "" }]);
+    expect(c.events).toEqual([{ kind: "artwork", at: 6, cp: "100" }]);
+  });
 });

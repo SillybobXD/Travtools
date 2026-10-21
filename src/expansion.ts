@@ -1,10 +1,10 @@
 import { BUILDINGS, CULTURE, UNITS } from "./data";
 import { fmt, fmtTime, toNum } from "./calc/format";
-import { celebrationCp, cpForecast, cpPerDay, DAY, expansionPlan, slotLevel, type CpEvent, type CpRepeat } from "./calc/culture";
+import { celebrationCp, celebrationSeconds, cpForecast, cpPerDay, DAY, expansionPlan, slotLevel, type CpEvent, type CpRepeat } from "./calc/culture";
 import { rangeCost } from "./calc/buildings";
 import { trainingTime } from "./calc/troops";
 import { parseCulture } from "./parse/culture";
-import { cultureOf, loadStore, newId, newVillage, saveStore, type CultureEvent, type CultureState, type Store, type VillageState } from "./storage";
+import { cultureOf, loadStore, newId, newVillage, saveStore, type CultureCeleb, type CultureEvent, type CultureState, type Store, type VillageState } from "./storage";
 import type { Res4 } from "./types";
 
 /* Expansion page: reads the inputs, runs the culture point forecast and the settler plan, and renders. All logic is in src/calc and src/parse. */
@@ -14,6 +14,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt
 const TRIBES = Object.keys(UNITS);
 const RES_ICONS = ["wood", "clay", "iron", "crop"];
 const KIND_NAME: Record<CultureEvent["kind"], string> = { small: "Small celebration", great: "Great celebration", artwork: "Artwork" };
+const CELEB_KINDS = ["small", "great"] as const;
 
 /* ---- state ---- */
 const buildingOf = (tribe: string, unit: number) => UNITS[tribe]?.[unit]?.building;
@@ -48,14 +49,36 @@ const total = () => cpPerDay(toNum(c.villages), toNum(c.hero), alliancePct());
 /** Where the forecast starts: when the CP were read, or now if they never were. */
 const start = () => c.cpAt ?? Date.now();
 const villageCpOf = (name: string | undefined) => (name ? c.villageCp[name]?.cp ?? 0 : 0);
-const defaultCp = (e: CultureEvent, perDay = total()) => (e.kind === "artwork" ? perDay
-  : celebrationCp(CULTURE.celebrations[e.kind === "great" ? 1 : 0], villageCpOf(e.village), perDay));
-const eventCp = (e: CultureEvent, perDay = total()) => (e.cp.trim() ? toNum(e.cp) : defaultCp(e, perDay));
-const eventLabel = (e: CultureEvent) => KIND_NAME[e.kind] + (e.kind !== "artwork" && e.village ? ` in ${e.village}` : "");
+const celebData = (e: CultureCeleb) => CULTURE.celebrations[e.kind === "great" ? 1 : 0];
+/** Default CP: an Artwork gives a day of production; a celebration its amount within its cap. */
+const defaultCp = (e: CultureEvent | CultureCeleb, perDay = total()) => (e.kind === "artwork" ? perDay
+  : celebrationCp(celebData(e as CultureCeleb), villageCpOf(e.village), perDay));
+const eventCp = (e: CultureEvent | CultureCeleb, perDay = total()) => (e.cp.trim() ? toNum(e.cp) : defaultCp(e, perDay));
+const celebLabel = (e: CultureCeleb) => KIND_NAME[e.kind] + (e.village ? ` in ${e.village}` : "");
+const serverSpeed = () => toNum(village().speed) || 1;
+/** How long each of a village's celebrations lasts; 0 without a Town Hall level. */
+const celebSeconds = (e: CultureCeleb) => (toNum(e.th) > 0 ? celebrationSeconds(celebData(e), toNum(e.th), serverSpeed(), CULTURE.townHallFactor) : 0);
 
+/** Artworks and celebrations that don't repeat, in seconds from the start. */
 function events(perDay = total(), extra: CpEvent[] = []): CpEvent[] {
   const s = start();
-  return [...c.events.map(e => ({ at: (e.at - s) / 1000, cp: eventCp(e, perDay), label: eventLabel(e) })), ...extra];
+  return [
+    ...c.events.map(e => ({ at: (e.at - s) / 1000, cp: eventCp(e, perDay), label: "Artwork" })),
+    ...c.celebs.filter(e => !(e.repeat && celebSeconds(e))).map(e => ({ at: (e.at - s) / 1000, cp: eventCp(e, perDay), label: celebLabel(e) })),
+    ...extra,
+  ];
+}
+
+/** Celebrations held back to back: the current one ends at `at`, each next one a celebration later. */
+function celebRepeats(perDay = total()): CpRepeat[] {
+  const s = start();
+  return c.celebs.flatMap(e => {
+    const every = celebSeconds(e);
+    if (!e.repeat || !every) return [];
+    let first = (e.at - s) / 1000;
+    while (first < 0) first += every;
+    return [{ first, every, cp: eventCp(e, perDay), label: celebLabel(e) }];
+  });
 }
 
 /** The daily quest reward, from its next time on or after the start. */
@@ -67,7 +90,8 @@ function quest(): CpRepeat | null {
   return { first, every, cp: CULTURE.dailyQuest.cp, label: "Daily quest reward" };
 }
 
-const forecastWith = (perDay: number, extra: CpEvent[] = []) => cpForecast(toNum(c.cp), toNum(c.need), perDay, events(perDay, extra), quest());
+const forecastWith = (perDay: number, extra: CpEvent[] = []) =>
+  cpForecast(toNum(c.cp), toNum(c.need), perDay, events(perDay, extra), [quest(), ...celebRepeats(perDay)]);
 
 /* ---- rendering ---- */
 function renderInputs() {
@@ -79,7 +103,7 @@ function renderInputs() {
   $("quest").checked = c.quest;
   $("questLabel").textContent = `Daily quest reward (${fmt(CULTURE.dailyQuest.cp)} every ${CULTURE.dailyQuest.everyDays} days)`;
   $("questAt").value = toInput(c.questAt);
-  renderEvents();
+  renderCelebs(); renderEvents();
   const vs = $<HTMLSelectElement>("village");
   vs.innerHTML = Object.entries(store.villages).map(([id, v]) => `<option value="${id}">${esc(v.name)} · ${esc(v.tribe)}</option>`).join("");
   vs.value = c.village;
@@ -89,19 +113,42 @@ function renderInputs() {
   $<HTMLDetailsElement>("pasteBox").open = !c.cp;
 }
 
-function renderEvents() {
+function renderCelebs() {
   const names = [...new Set([...Object.keys(c.villageCp), ...Object.values(store.villages).map(v => v.gameName ?? v.name)])];
+  const perDay = total();
+  $("celebs").innerHTML = c.celebs.map((e, k) => `
+    <div class="army" data-k="${k}">
+      <div class="army-top">
+        <div><label for="cvil${k}">Village</label><select id="cvil${k}" data-cf="village"><option value="">—</option>${names.map(n => `<option${n === e.village ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+        <button type="button" class="remove" data-cremove="${k}">Remove</button>
+      </div>
+      <div class="grid2">
+        <div><label for="ckind${k}">Kind</label><select id="ckind${k}" data-cf="kind">${CELEB_KINDS.map(kind => `<option value="${kind}"${kind === e.kind ? " selected" : ""}>${KIND_NAME[kind]}</option>`).join("")}</select></div>
+        <div><label for="cth${k}">Town Hall level</label><input id="cth${k}" data-cf="th" inputmode="numeric" autocomplete="off" value="${esc(e.th)}"></div>
+        <div><label for="cat${k}">${e.repeat ? "Current one ends" : "Ends at"}</label><input id="cat${k}" type="datetime-local" data-cf="at" value="${toInput(e.at)}"></div>
+        <div><label for="ccp${k}">CP each</label><input id="ccp${k}" data-cf="cp" inputmode="numeric" autocomplete="off" value="${esc(e.cp)}" placeholder="${fmt(defaultCp(e, perDay))}"></div>
+      </div>
+      <label class="check plain gap"><input type="checkbox" data-cf="repeat"${e.repeat ? " checked" : ""}> Back to back (24/7)</label>
+      <p class="hint" data-chint="${k}">${celebHint(e)}</p>
+    </div>`).join("") || `<p class="hint" style="margin-top:0">None running.</p>`;
+}
+
+function celebHint(e: CultureCeleb) {
+  const d = celebSeconds(e);
+  if (!d) return e.repeat ? `<span class="warn">Enter the Town Hall level to repeat it.</span>` : "";
+  return `Each lasts ${fmtTime(d)} at ${serverSpeed()}× speed: ${(DAY / d).toFixed(1)} a day.`;
+}
+
+function renderEvents() {
   const perDay = total();
   $("events").innerHTML = c.events.map((e, k) => `
     <div class="army" data-k="${k}">
       <div class="army-top">
-        <div><label for="ekind${k}">Kind</label><select id="ekind${k}" data-ef="kind">${(Object.keys(KIND_NAME) as CultureEvent["kind"][]).map(kind => `<option value="${kind}"${kind === e.kind ? " selected" : ""}>${KIND_NAME[kind]}</option>`).join("")}</select></div>
+        <div class="grid2">
+          <div><label for="eat${k}">Used at</label><input id="eat${k}" type="datetime-local" data-ef="at" value="${toInput(e.at)}"></div>
+          <div><label for="ecp${k}">CP</label><input id="ecp${k}" data-ef="cp" inputmode="numeric" autocomplete="off" value="${esc(e.cp)}" placeholder="${fmt(defaultCp(e, perDay))}"></div>
+        </div>
         <button type="button" class="remove" data-eremove="${k}">Remove</button>
-      </div>
-      <div class="grid2">
-        ${e.kind === "artwork" ? "" : `<div><label for="evil${k}">Village</label><select id="evil${k}" data-ef="village"><option value="">—</option>${names.map(n => `<option${n === e.village ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></div>`}
-        <div><label for="eat${k}">${e.kind === "artwork" ? "Used at" : "Ends at"}</label><input id="eat${k}" type="datetime-local" data-ef="at" value="${toInput(e.at)}"></div>
-        <div><label for="ecp${k}">CP</label><input id="ecp${k}" data-ef="cp" inputmode="numeric" autocomplete="off" value="${esc(e.cp)}" placeholder="${fmt(defaultCp(e, perDay))}"></div>
       </div>
     </div>`).join("") || `<p class="hint" style="margin-top:0">None planned.</p>`;
 }
@@ -122,7 +169,7 @@ function renderForecast() {
   const rows = [
     `<tr><td>Already produced</td><td></td><td>${fmt(toNum(c.cp))}</td></tr>`,
     `<tr><td>Production</td><td>${fmt(perDay)}/day</td><td>${fmt(f.fromProduction)}</td></tr>`,
-    ...f.events.map(e => `<tr><td>${esc(e.label)}</td><td>${esc(clock(start() + e.at * 1000))}</td><td>${fmt(e.cp)}</td></tr>`),
+    ...grouped(f.events).map(g => `<tr><td>${esc(g.label)}${g.n > 1 ? ` ×${g.n}` : ""}</td><td>${esc(clock(start() + g.first * 1000))}${g.n > 1 ? ` to ${esc(clock(start() + g.last * 1000))}` : ""}</td><td>${fmt(g.cp)}</td></tr>`),
   ];
   const game = c.gameEstimate != null && c.cpAt != null
     ? `<p class="hint">The game said ${esc(clock(c.gameEstimate))} from production alone${f.events.length ? "" : `; this is ${fmtTime(Math.abs(at - c.gameEstimate) / 1000)} ${at >= c.gameEstimate ? "later" : "sooner"}`}.</p>` : "";
@@ -136,6 +183,16 @@ function renderForecast() {
       <tfoot><tr><td>Next village at</td><td></td><td>${fmt(toNum(c.need))}</td></tr></tfoot>
     </table></div>
     ${whatIf(f.seconds, perDay)}`;
+}
+
+/** The forecast's events by label: how many, the first and last time, and their CP together. */
+function grouped(evs: CpEvent[]) {
+  const out: { label: string; n: number; first: number; last: number; cp: number }[] = [];
+  for (const e of evs) {
+    const g = out.find(x => x.label === e.label);
+    if (g) { g.n++; g.last = e.at; g.cp += e.cp; } else out.push({ label: e.label, n: 1, first: e.at, last: e.at, cp: e.cp });
+  }
+  return out;
 }
 
 /** How much sooner a boost gets the next village. */
@@ -230,15 +287,16 @@ function paste() {
   if (r.villages.length) {
     c.villageCp = Object.fromEntries(r.villages.map(v => [v.name, { cp: v.cpPerDay, ...(v.slots ? { slots: v.slots } : {}) }]));
     read.push(`${r.villages.length} villages with their CP per day and slots`);
-    // A running celebration replaces the next one already listed for that village, keeping its kind.
+    // A running celebration sets when that village's current one ends; its kind, Town Hall and repeat stay.
     const running = r.villages.filter(v => v.celebrationLeft != null);
     for (const v of running) {
-      const old = c.events.filter(e => e.kind !== "artwork" && e.village === v.name && e.at > now - 60000).sort((a, b) => a.at - b.at)[0];
-      if (old) c.events.splice(c.events.indexOf(old), 1);
-      c.events.push({ kind: old?.kind ?? "small", at: now + v.celebrationLeft! * 1000, cp: old?.cp ?? "", village: v.name });
+      const at = now + v.celebrationLeft! * 1000, row = c.celebs.find(e => e.village === v.name);
+      if (row) row.at = at;
+      else c.celebs.push({ village: v.name, kind: "small", at, th: "", repeat: true, cp: "" });
     }
-    c.events.sort((a, b) => a.at - b.at);
-    if (running.length) read.push(`${running.length} running celebration${running.length === 1 ? "" : "s"} (check small or great below)`);
+    if (running.length) read.push(`${running.length} running celebration${running.length === 1 ? "" : "s"}`);
+    const noTh = c.celebs.filter(e => e.repeat && !toNum(e.th)).length;
+    if (noTh) read.push(`<span class="warn">enter the Town Hall level and kind of ${noTh === 1 ? "one celebration" : `${noTh} celebrations`} below</span>`);
   }
   status.innerHTML = read.length ? `Read ${read.join(", ")}.` + (r.produced == null ? " Now paste the Residence's or Palace's Culture points tab." : "")
     : `<span class="warn">No culture points found in that text. Copy the whole page in English.</span>`;
@@ -250,14 +308,14 @@ const field = (id: string, key: "cp" | "need" | "villages" | "alliance" | "level
   $(id).addEventListener("input", e => { c[key] = (e.target as HTMLInputElement).value; after?.(); update(); });
 field("cp", "cp", () => (c.cpAt = Date.now()));
 field("need", "need");
-field("villages", "villages", renderEvents);
-field("alliance", "alliance", renderEvents);
+field("villages", "villages", () => { renderCelebs(); renderEvents(); });
+field("alliance", "alliance", () => { renderCelebs(); renderEvents(); });
 ["level", "used", "buildH", "buildM", "settlers"].forEach(k => field(k, k as "level"));
 $("cultureText").addEventListener("input", paste);
-$("hero").addEventListener("change", e => { c.hero = (e.target as HTMLSelectElement).value; renderEvents(); update(); });
+$("hero").addEventListener("change", e => { c.hero = (e.target as HTMLSelectElement).value; renderCelebs(); renderEvents(); update(); });
 $("quest").addEventListener("change", e => { c.quest = (e.target as HTMLInputElement).checked; if (c.quest && c.questAt == null) { c.questAt = soon(); $("questAt").value = toInput(c.questAt); } update(); });
 $("questAt").addEventListener("input", e => { const t = fromInput((e.target as HTMLInputElement).value); c.questAt = isNaN(t) ? undefined : t; update(); });
-$("addCeleb").addEventListener("click", () => { c.events.push({ kind: "small", at: soon(), cp: "", village: village().gameName ?? village().name }); renderEvents(); update(); });
+$("addCeleb").addEventListener("click", () => { c.celebs.push({ kind: "small", at: soon(), th: "", repeat: true, cp: "", village: village().gameName ?? village().name }); renderCelebs(); update(); });
 $("addArtwork").addEventListener("click", () => { c.events.push({ kind: "artwork", at: soon(), cp: "" }); renderEvents(); update(); });
 $("events").addEventListener("click", e => {
   const k = (e.target as HTMLElement).dataset.eremove;
@@ -269,12 +327,29 @@ $("events").addEventListener("input", e => {
   const ev = c.events[+k];
   if (f === "at") { const ms = fromInput(t.value); if (!isNaN(ms)) ev.at = ms; }
   else if (f === "cp") ev.cp = t.value;
-  else if (f === "village") ev.village = t.value || undefined;
-  else if (f === "kind") { ev.kind = t.value as CultureEvent["kind"]; renderEvents(); }
-  if (f === "village") renderEvents();
   update();
 });
-$("village").addEventListener("change", e => { c.village = (e.target as HTMLSelectElement).value; update(); });
+$("celebs").addEventListener("click", e => {
+  const k = (e.target as HTMLElement).dataset.cremove;
+  if (k != null) { c.celebs.splice(+k, 1); renderCelebs(); update(); }
+});
+$("celebs").addEventListener("input", e => {
+  const t = e.target as HTMLInputElement, k = t.closest<HTMLElement>("[data-k]")?.dataset.k, f = t.dataset.cf;
+  if (k == null || !f) return;
+  const ev = c.celebs[+k];
+  if (f === "at") { const ms = fromInput(t.value); if (!isNaN(ms)) ev.at = ms; }
+  else if (f === "cp") ev.cp = t.value;
+  else if (f === "th") ev.th = t.value;
+  else if (f === "village") ev.village = t.value || undefined;
+  else if (f === "kind") ev.kind = t.value as CultureCeleb["kind"];
+  else if (f === "repeat") ev.repeat = t.checked;
+  // Selects and the checkbox change labels and defaults; text fields only update the hint, to keep the cursor.
+  if (f === "village" || f === "kind" || f === "repeat") renderCelebs();
+  else { const h = document.querySelector(`[data-chint="${k}"]`); if (h) h.innerHTML = celebHint(ev); }
+  update();
+});
+// The slot village's server speed sets celebration lengths too.
+$("village").addEventListener("change", e => { c.village = (e.target as HTMLSelectElement).value; renderCelebs(); update(); });
 document.querySelectorAll<HTMLInputElement>('input[name="building"]').forEach(r => r.addEventListener("change", () => { c.building = r.value as CultureState["building"]; update(); }));
 
 renderInputs();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CULTURE } from "../data";
-import { celebrationCp, cpForecast, cpPerDay, DAY, expansionPlan, slotLevel, slotsAt } from "./culture";
+import { celebrationCp, celebrationSeconds, cpForecast, cpPerDay, DAY, expansionPlan, slotLevel, slotsAt } from "./culture";
 
 const H = 3600;
 
@@ -60,11 +60,40 @@ describe("cpForecast", () => {
   it("repeats the daily quest reward", () => {
     // 400 every 4 days from day 1, no production: 1,000 needs three rewards, at days 1, 5 and 9.
     const quest = { first: DAY, every: 4 * DAY, cp: 400, label: "quest" };
-    expect(cpForecast(0, 1000, 0, [], quest).seconds).toBe(9 * DAY);
+    expect(cpForecast(0, 1000, 0, [], [quest]).seconds).toBe(9 * DAY);
     // With production the first reward helps: 3,002 at 1,413 per day, 400 at day 1.
-    const f = cpForecast(35998, 39000, 1413, [], quest);
+    const f = cpForecast(35998, 39000, 1413, [], [quest]);
     expect(f.seconds).toBeCloseTo((3002 - 400) / 1413 * DAY);
     expect(f.events).toHaveLength(1);
+  });
+});
+
+describe("celebrations back to back", () => {
+  const [small, great] = CULTURE.celebrations, f = CULTURE.townHallFactor;
+  it("last 24 h (small) and 60 h (great) at Town Hall 1, shorter by 0.964 per level and by server speed", () => {
+    expect(celebrationSeconds(small, 1, 1, f)).toBe(24 * H);
+    expect(celebrationSeconds(great, 1, 1, f)).toBe(60 * H);
+    expect(celebrationSeconds(small, 10, 1, f)).toBeCloseTo(24 * H * 0.964 ** 9);
+    expect(celebrationSeconds(small, 20, 3, f)).toBeCloseTo(24 * H * 0.964 ** 19 / 3);
+    expect(celebrationSeconds(small, 0, 0, f)).toBe(24 * H);
+  });
+
+  it("count every celebration that ends before the CP are there", () => {
+    // Need 3,002 at 1,413 per day. Village A: 500 every 5 h from 16 h; village C: 363 every 5 h from 22 h.
+    const reps = [
+      { first: 16 * H, every: 5 * H, cp: 500, label: "A" },
+      { first: 22 * H, every: 5 * H, cp: 363, label: "C" },
+    ];
+    const r = cpForecast(35998, 39000, 1413, [], reps);
+    // Production gives 942 by 16 h: +500 at 16 h, +294 by 21 h: +500, +59 by 22 h: +363 → 38,656; 26 h: +500 → enough.
+    expect(r.seconds).toBe(26 * H);
+    expect(r.events.map(e => e.label)).toEqual(["A", "A", "C", "A"]);
+    expect(r.fromEvents).toBe(1863);
+  });
+
+  it("several repeats alone reach the need without production", () => {
+    const reps = [{ first: 0, every: 10 * H, cp: 500, label: "A" }, { first: 5 * H, every: 10 * H, cp: 500, label: "B" }];
+    expect(cpForecast(0, 2000, 0, [], reps).seconds).toBe(15 * H);
   });
 });
 

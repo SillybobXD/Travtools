@@ -72,6 +72,11 @@ export interface CultureData {
   helmets: { name: string; cpPerDay: number }[];
   /** The daily quests' culture point reward: a flat amount every few days. */
   dailyQuest: { cp: number; everyDays: number };
-  /** Small, then great: culture points at the end, at most the village's or the account's production per day. */
-  celebrations: { name: string; cp: number; capBy: "village" | "account" }[];
+  /** Town Hall level L makes a celebration last factor^(L-1) of its base time. */
+  townHallFactor: number;
+  /**
+   * Small, then great: culture points at the end, at most the village's or the account's production per day,
+   * and the duration in seconds at Town Hall level 1 and speed 1×.
+   */
+  celebrations: { name: string; cp: number; capBy: "village" | "account"; seconds: number }[];
 }

@@ -19,6 +19,14 @@ export function celebrationCp(c: CultureData["celebrations"][number], villagePer
   return cap > 0 ? Math.min(c.cp, cap) : c.cp;
 }
 
+/**
+ * Seconds a celebration lasts: its base time × factor^(Town Hall level - 1) / server speed
+ * (factor 0.964, like the Main Building's, from kirilloid's model; not checked against the game yet).
+ */
+export function celebrationSeconds(c: CultureData["celebrations"][number], townHall: number, serverSpeed: number, factor: number): number {
+  return c.seconds * Math.pow(factor, Math.max(1, townHall || 1) - 1) / (serverSpeed || 1);
+}
+
 /** A one-off gain of culture points: a celebration ending, an Artwork, a daily quest reward. */
 export interface CpEvent {
   at: number;
@@ -26,7 +34,7 @@ export interface CpEvent {
   label: string;
 }
 
-/** A reward that repeats: first at `first`, then every `every` seconds. */
+/** A reward that repeats: first at `first`, then every `every` seconds (a daily quest, celebrations back to back). */
 export interface CpRepeat {
   first: number;
   every: number;
@@ -45,19 +53,20 @@ export interface CpForecast {
 }
 
 /**
- * When culture points reach `need`: they grow by `perDay` all the time and jump at each event.
- * Events before 0 are already in `have` and are ignored.
+ * When culture points reach `need`: they grow by `perDay` all the time and jump at each event and each
+ * occurrence of the repeats. Events before 0 are already in `have` and are ignored.
  */
-export function cpForecast(have: number, need: number, perDay: number, events: CpEvent[], repeat?: CpRepeat | null): CpForecast {
+export function cpForecast(have: number, need: number, perDay: number, events: CpEvent[], repeats: (CpRepeat | null | undefined)[] = []): CpForecast {
   const rate = Math.max(0, perDay) / DAY;
   const missing = need - have;
   if (missing <= 0) return { seconds: 0, events: [], fromProduction: 0, fromEvents: 0 };
-  // Nothing after production alone gets there can matter; with no production, enough repeats will.
+  const reps = repeats.filter((r): r is CpRepeat => !!r && r.cp > 0 && r.every > 0);
+  // Nothing after production alone, or any one repeat alone, gets there can matter.
   let limit = rate > 0 ? missing / rate : Infinity;
-  if (limit === Infinity && repeat && repeat.cp > 0 && repeat.every > 0) limit = Math.max(0, repeat.first) + repeat.every * Math.ceil(missing / repeat.cp);
+  for (const r of reps) limit = Math.min(limit, Math.max(0, r.first) + r.every * Math.ceil(missing / r.cp));
   const all = events.filter(e => e.at >= 0 && e.at <= limit && e.cp > 0);
-  if (repeat && repeat.cp > 0 && repeat.every > 0)
-    for (let t = repeat.first; t <= limit; t += repeat.every) if (t >= 0) all.push({ at: t, cp: repeat.cp, label: repeat.label });
+  for (const r of reps)
+    for (let t = r.first; t <= limit; t += r.every) if (t >= 0) all.push({ at: t, cp: r.cp, label: r.label });
   all.sort((a, b) => a.at - b.at);
   let t = 0, cp = have, fromEvents = 0;
   const counted: CpEvent[] = [];

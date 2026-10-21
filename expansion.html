@@ -55,13 +55,14 @@
     <h2><svg class="ico" aria-hidden="true"><use href="#i-party"></use></svg>Extra culture points</h2>
     <label class="check plain"><input type="checkbox" id="quest"> <span id="questLabel">Daily quest reward</span></label>
     <div class="grid2 gap" id="questBox"><div><label for="questAt">Next reward</label><input id="questAt" type="datetime-local"></div></div>
-    <h3>Celebrations and Artworks</h3>
+    <h3>Celebrations</h3>
+    <div id="celebs"></div>
+    <button type="button" id="addCeleb" class="gap">Add celebration</button>
+    <p class="hint">Culture points come when a celebration ends: small 500, at most the village's CP per day; great 2,000, at most the account's. Back to back, the next one starts right away and lasts 24 h (small) or 60 h (great) × 0.964 per Town Hall level above 1, divided by the server speed (the slot village's). These rules aren't checked against the game yet; type the CP to override.</p>
+    <h3>Artworks</h3>
     <div id="events"></div>
-    <div class="inline">
-      <button type="button" id="addCeleb">Add celebration</button>
-      <button type="button" id="addArtwork">Add Artwork</button>
-    </div>
-    <p class="hint">A celebration's culture points come when it ends: small 500, at most the village's CP per day; great 2,000, at most the account's. An Artwork gives one day of the account's CP by default. Blank CP uses these defaults; neither rule is checked against the game yet.</p>
+    <button type="button" id="addArtwork" class="gap">Add Artwork</button>
+    <p class="hint">An Artwork gives one day of the account's CP by default (not checked against the game).</p>
   </section>
 
   <section class="plan-card" aria-live="polite">

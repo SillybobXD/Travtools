@@ -43,7 +43,7 @@ src/
     npc.ts              storageCaps, planNeeds, npcTargets
     combat.ts           upgraded, attackPower, defencePower, weightedDefence, wallBonus, wallDefence, morale, massFactor, lossShares, unitLosses, woundedOf, battle
     optimize.ts         optimize (attack or defend army search), simulateOption, trimOption, mainMix, unitValue, armyValue, combatUnits, lootable, simplexGrid
-    culture.ts          cpPerDay, celebrationCp, cpForecast, slotsAt, slotLevel, expansionPlan
+    culture.ts          cpPerDay, celebrationCp, celebrationSeconds, cpForecast, slotsAt, slotLevel, expansionPlan
     smithyEstimate.ts   estimateAttackerSmithy, estimateDefenderSmithy: smithy levels that fit a report's combat strength
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
     travel.ts           slowestSpeed, armyTravelSeconds
@@ -65,7 +65,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 ## Rules
 - Keep calculation logic in `src/calc/` as pure functions with tests; `main.ts` only reads inputs and renders.
 - Do not reorder entries in `units.json`, `buildings.json`, `celebrations.json` or `nature.json`: saved state and parsed reports use indices. Append new entries at the end of a list.
-- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. Both pages load and save the whole store, so each keeps what the other wrote. The combat page adds `store.combat` (`CombatState`: mode, enemy armies with smithy levels and the report's note, wall, target coordinates, loot, source, cap, allowed units per tribe, objective, trim, populations) and `village.combat` (`VillageCombat`: own troops and smithy levels per unit index); both are optional, and `combatOf` / `villageCombat` fill in defaults so older saves load. The expansion page adds `store.culture` (`CultureState`, account-wide), completed by `cultureOf`. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
+- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. Both pages load and save the whole store, so each keeps what the other wrote. The combat page adds `store.combat` (`CombatState`: mode, enemy armies with smithy levels and the report's note, wall, target coordinates, loot, source, cap, allowed units per tribe, objective, trim, populations) and `village.combat` (`VillageCombat`: own troops and smithy levels per unit index); both are optional, and `combatOf` / `villageCombat` fill in defaults so older saves load. The expansion page adds `store.culture` (`CultureState`, account-wide), completed by `cultureOf`, which also moves celebrations from the first version's event list into `celebs`. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
 - A single troop row with no celebrations, every resource convertible and “Use an NPC trade” on must give exactly the results of the old single-unit version in each mode; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
 - Older saves had one village-wide troop `mode` (none/max/count/time) with shared hours and minutes. `normalizeTroops` gives each row its own mode and time on load; "none" becomes no rows. Keep it.
 - `[hidden] { display: none !important; }` in `style.css` makes the `hidden` attribute win over classes that set `display`. Keep it.
@@ -118,7 +118,8 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
   - CP per day = (villages + hero) + floor((villages + hero) × alliance bonus %), as the Residence tab shows (1,259 + 100, +4% = 54, total 1,413).
   - Hero helmets: Helmet of the Gladiator tier 1/2/3 = 100/400/1,600 CP per day. Daily quest: 400 CP every 4 days (from the next reward time).
   - Celebrations add their CP when they end: small 500, at most the village's CP per day; great 2,000, at most the account's. Artwork: one day of the account's CP by default. These caps and the Artwork value are unverified; every event's CP can be typed.
-  - `cpForecast`: production is continuous, events are jumps; solved exactly between events. With production alone it matches the game's own estimate (within its ±5 minutes); the game's estimate ignores celebrations.
+  - Celebration length: 24 h (small) or 60 h (great) × 0.964^(Town Hall level − 1) / server speed (`celebrationSeconds`; the factor is the Main Building's in kirilloid's model, unverified for the Town Hall). Each village's celebrations can run back to back (24/7): the current one ends at the time pasted or typed, then one more every celebration length.
+  - `cpForecast`: production is continuous, events are jumps, repeats (the daily quest, each village's back-to-back celebrations) are expanded up to the time production or any one repeat alone would get there; solved exactly between events. With production alone it matches the game's own estimate (within its ±5 minutes); the game's estimate ignores celebrations.
   - Settlement slots: Residence at 10 and 20, Palace at 10, 15 and 20. The game doesn't let settlers leave before the CP are there, so the last settler is ready at the CP time; settlers train one after another at the slot level (`trainingTime`, the village's Residence/Palace bonus); the upgrades end when the first settler starts. If that can't fit, the plan starts now and the village comes later (`late`).
 - Production per hour is entered per village (crop may be negative). Storage fills at `(cap - have) / production`; negative crop runs out at `have / -production`.
 - Time to afford (fixed plan, whichever way the switch is set). Without trading: the slowest missing resource, `(need - have) / production`; never if it isn't produced or doesn't fit in storage. Resources not to convert into are claimed from the hero and don't wait.
@@ -141,7 +142,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Rams are not modelled (see the ram cases under "Import reports and troops").
 - Other tribes' base training times are from memory; verify against the game.
 - Building construction time is not implemented (formula depends on main building level and per-building constants). The Expansion page asks for the Residence/Palace upgrade time.
-- Celebration CP caps, celebration durations (Town Hall level) and the Artwork's CP are unverified; queued celebrations are typed with their end time.
+- Celebration CP caps, celebration durations (Town Hall factor 0.964, base 24 h / 60 h) and the Artwork's CP are unverified. Check a duration against the Town Hall page in the game.
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
 
 ## Combat page
@@ -157,9 +158,9 @@ The optimizer runs 200 ms after the last change; the simulator runs at once.
 
 ## Expansion page
 `expansion.html` + `src/expansion.ts`, top to bottom:
-- Paste: the overview's Culture points tab (CP per day per village, running celebrations' time left, slots used/total, the game's estimate) and the Residence's or Palace's Culture points tab (CP so far, CP for the next village, per day: active village, other villages, hero, alliance bonus %, total). One at a time; each fills what it has. A running celebration replaces the next one listed for that village, keeping its small/great choice (small by default; the tab doesn't say).
+- Paste: the overview's Culture points tab (CP per day per village, running celebrations' time left, slots used/total, the game's estimate) and the Residence's or Palace's Culture points tab (CP so far, CP for the next village, per day: active village, other villages, hero, alliance bonus %, total). One at a time; each fills what it has. A running celebration sets when that village's current one ends; a village not listed yet gets a small, back-to-back row whose Town Hall level must be typed (the tab shows neither kind nor level).
 - Culture points: so far, next village at, CP per day (villages, helmet, alliance %), the total checked against the game's.
-- Extra culture points: daily quest reward (next time), celebrations and Artworks with a time and CP (blank = default).
+- Extra culture points: daily quest reward (next time); celebrations per village (kind, Town Hall level, when the current one ends, back to back or not, CP each, blank = default); Artworks with a time and CP. The forecast table groups each village's celebrations (×n, first to last).
 - Next village: the forecast, what counts towards it, the game's estimate, and what would help (an Artwork now, the next helmet tier).
 - Residence and settlers: the saved village (tribe, server speed, Residence bonus), Residence or Palace, level now, slots used (from the paste), the upgrade time typed, settlers to train; the latest start of each step and the costs.
 
