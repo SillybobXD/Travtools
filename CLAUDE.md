@@ -1,6 +1,6 @@
 # Travian Village Planner
 
-Static web tool for Travian Legends players, two pages sharing the saved villages. The Village planner keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution (optionally never converting into resources you claim from the hero), and works out what to send from another village, with the distance from map coordinates. The Combat page finds the army to attack with or the reinforcements to send, from pasted reports and the player's troops.
+Static web tool for Travian Legends players, three pages sharing the saved villages. The Village planner keeps a plan per saved village and plans building upgrades, celebrations and mixed troop training, computes NPC merchant redistribution (optionally never converting into resources you claim from the hero), and works out what to send from another village, with the distance from map coordinates. The Combat page finds the army to attack with or the reinforcements to send, from pasted reports and the player's troops. The Expansion page forecasts when culture points allow the next village and when to start the Residence or Palace and the settlers.
 
 ## Structure
 Vite + TypeScript, no runtime dependencies. Output is a static site in `dist/`.
@@ -8,10 +8,12 @@ Vite + TypeScript, no runtime dependencies. Output is a static site in `dist/`.
 ```
 index.html              Village planner markup only; loads src/style.css and src/main.ts
 combat.html             Combat page markup only; loads src/style.css and src/combat.ts
+expansion.html          Expansion page markup only; loads src/style.css and src/expansion.ts
 src/
   main.ts               Village planner DOM wiring: rendering, events, reading inputs
   combat.ts             Combat page DOM wiring: reads inputs, runs optimize() and battle(), renders
-  storage.ts            localStorage: saved villages, unit stat edits, combat page state, migration of old saves
+  expansion.ts          Expansion page DOM wiring: culture point forecast and the Residence/settler plan
+  storage.ts            localStorage: saved villages, unit stat edits, combat and expansion page state, migration of old saves
   style.css             all styles (light/dark via CSS variables on :root)
   types.ts              Res4, Unit, Building, Merchant, Celebration
   data/
@@ -22,7 +24,8 @@ src/
     capacity.json       warehouse/granary capacity by level (0 = none)
     walls.json          wall name, defence factor and flat defence per level, by tribe
     nature.json         Nature's animals (oasis defenders): att, defInf, defCav, upkeep. Not a tribe
-    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY, WALLS, NATURE, NATURE_TRIBE
+    culture.json        CP helmets, the daily quest reward, celebration culture points
+    index.ts            typed exports UNITS, BUILDINGS, MERCH, CELEBRATIONS, CAPACITY, WALLS, NATURE, NATURE_TRIBE, CULTURE
   parse/
     overview.ts         parseOverview: reads a pasted copy of the game's village overview
     text.ts             shared helpers: cleanLines (drops direction marks), toInt, NUM/SNUM/NUM_LINE/COORD patterns
@@ -30,6 +33,7 @@ src/
     report.ts           parseReport: battle, raid, scout and defence reports; reportArmy
     troops.ts           parseTroops: troops per village from the overview's Troops tab; villageArmy
     smithy.ts           parseSmithy: smithy levels per village from the overview's Smithy tab; villageSmithy
+    culture.ts          parseCulture: the overview's and the Residence's Culture points tabs
     combatInput.ts      fillFromReport, smithyFromReport: what a parsed report fills in on the combat page
     report.fixtures.ts  anonymized report pastes for tests (and for checking the page by hand)
   calc/                 pure functions, no DOM access
@@ -39,6 +43,7 @@ src/
     npc.ts              storageCaps, planNeeds, npcTargets
     combat.ts           upgraded, attackPower, defencePower, weightedDefence, wallBonus, wallDefence, morale, massFactor, lossShares, unitLosses, woundedOf, battle
     optimize.ts         optimize (attack or defend army search), simulateOption, trimOption, mainMix, unitValue, armyValue, combatUnits, lootable, simplexGrid
+    culture.ts          cpPerDay, celebrationCp, cpForecast, slotsAt, slotLevel, expansionPlan
     smithyEstimate.ts   estimateAttackerSmithy, estimateDefenderSmithy: smithy levels that fit a report's combat strength
     merchants.ts        merchantsNeeded, travelSeconds, mapDistance
     travel.ts           slowestSpeed, armyTravelSeconds
@@ -60,7 +65,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 ## Rules
 - Keep calculation logic in `src/calc/` as pure functions with tests; `main.ts` only reads inputs and renders.
 - Do not reorder entries in `units.json`, `buildings.json`, `celebrations.json` or `nature.json`: saved state and parsed reports use indices. Append new entries at the end of a list.
-- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. Both pages load and save the whole store, so each keeps what the other wrote. The combat page adds `store.combat` (`CombatState`: mode, enemy armies with smithy levels and the report's note, wall, target coordinates, loot, source, cap, allowed units per tribe, objective, trim, populations) and `village.combat` (`VillageCombat`: own troops and smithy levels per unit index); both are optional, and `combatOf` / `villageCombat` fill in defaults so older saves load. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
+- Storage: everything lives under the localStorage key `village-planner-v2` (`Store` in `storage.ts`): one `VillageState` per saved village, plus unit stat edits (`overrides`) shared by all villages. Both pages load and save the whole store, so each keeps what the other wrote. The combat page adds `store.combat` (`CombatState`: mode, enemy armies with smithy levels and the report's note, wall, target coordinates, loot, source, cap, allowed units per tribe, objective, trim, populations) and `village.combat` (`VillageCombat`: own troops and smithy levels per unit index); both are optional, and `combatOf` / `villageCombat` fill in defaults so older saves load. The expansion page adds `store.culture` (`CultureState`, account-wide), completed by `cultureOf`. If that key is missing, the old single-village saves `village-planner` then `npc-planner` are migrated into the first village and left in place. Keep that migration working.
 - A single troop row with no celebrations, every resource convertible and “Use an NPC trade” on must give exactly the results of the old single-unit version in each mode; `troopMix.test.ts` checks this against `maxTroops` and `troopsForTime`.
 - Older saves had one village-wide troop `mode` (none/max/count/time) with shared hours and minutes. `normalizeTroops` gives each row its own mode and time on load; "none" becomes no rows. Keep it.
 - `[hidden] { display: none !important; }` in `style.css` makes the `hidden` attribute win over classes that set `display`. Keep it.
@@ -72,7 +77,7 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Keep it dependency-free at runtime unless a feature clearly needs a library.
 - Icons are our own inline SVG symbols in the sprite at the top of `index.html` (`<use href="#i-wood">`, or `icon()` in `main.ts`). Don't copy Travian's artwork.
 - The plan table must fit 375px without scrolling: keep long text in its cells on separate lines.
-- Both pages share `style.css` and link to each other from the `.top-nav` header. Each page carries its own copy of the icon sprite with the symbols it uses.
+- All pages share `style.css` and link to each other from the `.top-nav` header. Each page carries its own copy of the icon sprite with the symbols it uses.
 - Mobile-first: the main user plays on a phone. Support light and dark mode via the CSS variables.
 
 ## Formulas in use
@@ -109,6 +114,12 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
   - Attacker (defend mode): from the attacker's strength in the statistics.
   - Defender (attack mode): only when everything else is known: the wall level is in the report (or the target is an oasis, wall 0), no rams (they may lower the wall during the battle), the attack was all infantry or all cavalry, and one army besides animals defended. Shown = (units + 10 + wall's flat defence) × wall bonus.
   - Scout reports and other reports without statistics give nothing, and the page says so.
+- Culture points (`culture.ts`), in seconds from when the CP numbers were pasted or typed (`cpAt`):
+  - CP per day = (villages + hero) + floor((villages + hero) × alliance bonus %), as the Residence tab shows (1,259 + 100, +4% = 54, total 1,413).
+  - Hero helmets: Helmet of the Gladiator tier 1/2/3 = 100/400/1,600 CP per day. Daily quest: 400 CP every 4 days (from the next reward time).
+  - Celebrations add their CP when they end: small 500, at most the village's CP per day; great 2,000, at most the account's. Artwork: one day of the account's CP by default. These caps and the Artwork value are unverified; every event's CP can be typed.
+  - `cpForecast`: production is continuous, events are jumps; solved exactly between events. With production alone it matches the game's own estimate (within its ±5 minutes); the game's estimate ignores celebrations.
+  - Settlement slots: Residence at 10 and 20, Palace at 10, 15 and 20. The game doesn't let settlers leave before the CP are there, so the last settler is ready at the CP time; settlers train one after another at the slot level (`trainingTime`, the village's Residence/Palace bonus); the upgrades end when the first settler starts. If that can't fit, the plan starts now and the village comes later (`late`).
 - Production per hour is entered per village (crop may be negative). Storage fills at `(cap - have) / production`; negative crop runs out at `have / -production`.
 - Time to afford (fixed plan, whichever way the switch is set). Without trading: the slowest missing resource, `(need - have) / production`; never if it isn't produced or doesn't fit in storage. Resources not to convert into are claimed from the hero and don't wait.
 - With an NPC trade: when the village's total reaches the need of the convertible resources. Each resource grows within its storage (production stops when full) and negative crop stops at 0, so the total is piecewise linear; `timeToAffordTrade` solves it exactly per stretch.
@@ -129,7 +140,8 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - The optimizer is a heuristic search: it is not guaranteed to find the true optimum, though tests check it against hand-worked cases, that a bigger cap never scores worse on sample targets, and that every reported win is a win in `battle()`.
 - Rams are not modelled (see the ram cases under "Import reports and troops").
 - Other tribes' base training times are from memory; verify against the game.
-- Building construction time is not implemented (formula depends on main building level and per-building constants).
+- Building construction time is not implemented (formula depends on main building level and per-building constants). The Expansion page asks for the Residence/Palace upgrade time.
+- Celebration CP caps, celebration durations (Town Hall level) and the Artwork's CP are unverified; queued celebrations are typed with their end time.
 - Rounding behaviour of building costs at high levels has not been checked against the game. Verified cases: Warehouse level 2 and Cropland level 10 (see `buildings.test.ts`).
 
 ## Combat page
@@ -142,6 +154,14 @@ Resource arrays (`Res4`) are always wood, clay, iron, crop.
 - Optimize for: the four objectives (most loot only in attack raids), "Trim small leftovers" (on by default; a card notes what was trimmed and the change in losses), wounded as recoverable, and optional populations for morale.
 - Best army: the best option and its alternatives as cards (army, win or lose, army value, our losses and wounded, enemy losses, loot in raids, travel time when both villages have coordinates, using the slowest unit and server speed). "Simulate / edit this army" opens an editable army run through `battle()` on every keystroke.
 The optimizer runs 200 ms after the last change; the simulator runs at once.
+
+## Expansion page
+`expansion.html` + `src/expansion.ts`, top to bottom:
+- Paste: the overview's Culture points tab (CP per day per village, running celebrations' time left, slots used/total, the game's estimate) and the Residence's or Palace's Culture points tab (CP so far, CP for the next village, per day: active village, other villages, hero, alliance bonus %, total). One at a time; each fills what it has. A running celebration replaces the next one listed for that village, keeping its small/great choice (small by default; the tab doesn't say).
+- Culture points: so far, next village at, CP per day (villages, helmet, alliance %), the total checked against the game's.
+- Extra culture points: daily quest reward (next time), celebrations and Artworks with a time and CP (blank = default).
+- Next village: the forecast, what counts towards it, the game's estimate, and what would help (an Artwork now, the next helmet tier).
+- Residence and settlers: the saved village (tribe, server speed, Residence bonus), Residence or Palace, level now, slots used (from the paste), the upgrade time typed, settlers to train; the latest start of each step and the costs.
 
 ## Combat optimizer roadmap
 1. Done: combat data and the simulator in `combat.ts`.

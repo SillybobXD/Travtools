@@ -65,3 +65,13 @@ export interface Wall {
   factor: number;
   def: number;
 }
+
+/** Culture point sources with fixed values (`culture.json`). */
+export interface CultureData {
+  /** Hero helmets that add culture points per day, "none" first. */
+  helmets: { name: string; cpPerDay: number }[];
+  /** The daily quests' culture point reward: a flat amount every few days. */
+  dailyQuest: { cp: number; everyDays: number };
+  /** Small, then great: culture points at the end, at most the village's or the account's production per day. */
+  celebrations: { name: string; cp: number; capBy: "village" | "account" }[];
+}

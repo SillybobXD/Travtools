@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combatOf, migrateLegacy, newVillage, normalizeTroops, villageCombat, type Store } from "./storage";
+import { combatOf, cultureOf, migrateLegacy, newVillage, normalizeTroops, villageCombat, type Store } from "./storage";
 
 describe("migrateLegacy", () => {
   it("turns the single-village save into the first village", () => {
@@ -83,5 +83,21 @@ describe("combat state", () => {
     const again = JSON.parse(JSON.stringify(s)) as Store;
     expect(combatOf(again).cap).toBe("250000");
     expect(again.villages.a.combat!.troops[1]).toBe("40");
+  });
+});
+
+describe("expansion state", () => {
+  const store = (): Store => ({ version: 2, current: "a", villages: { a: newVillage("A", "Gauls", "1") }, overrides: {} });
+
+  it("older saves get defaults, saved inputs are kept", () => {
+    const s = store();
+    expect(cultureOf(s)).toMatchObject({ cp: "", hero: "0", quest: false, events: [], village: "a", building: "Residence", settlers: "3" });
+    expect(s.culture).toBeDefined();
+    const t = store();
+    t.culture = { cp: "35998", village: "gone" } as unknown as Store["culture"];
+    const c = cultureOf(t);
+    expect(c.cp).toBe("35998");
+    expect(c.village).toBe("a");
+    expect(c.villageCp).toEqual({});
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILDINGS, CAPACITY, CELEBRATIONS, MERCH, NATURE, NATURE_TRIBE, UNITS, WALLS } from ".";
+import { BUILDINGS, CAPACITY, CELEBRATIONS, CULTURE, MERCH, NATURE, NATURE_TRIBE, UNITS, WALLS } from ".";
 
 const isRes4 = (r: unknown) => Array.isArray(r) && r.length === 4 && r.every(v => Number.isInteger(v) && v >= 0);
 
@@ -69,5 +69,12 @@ describe("data files", () => {
       expect(m.capacity).toBeGreaterThan(0);
       expect(m.speed).toBeGreaterThan(0);
     }
+  });
+
+  it("culture points data is well-formed", () => {
+    expect(CULTURE.helmets[0].cpPerDay).toBe(0);
+    expect(CULTURE.helmets.every((h, i) => i === 0 || h.cpPerDay > CULTURE.helmets[i - 1].cpPerDay)).toBe(true);
+    expect(CULTURE.dailyQuest).toEqual({ cp: 400, everyDays: 4 });
+    expect(CULTURE.celebrations.map(c => c.name)).toEqual(CELEBRATIONS.map(c => c.name));
   });
 });

@@ -6,8 +6,8 @@ export default defineConfig({
   build: {
     // Ship the stylesheet as written; the minifier adds color-scheme helper variables.
     cssMinify: false,
-    // Two pages share the stylesheet, the data and the saved villages.
-    rollupOptions: { input: { main: "index.html", combat: "combat.html" } },
+    // The pages share the stylesheet, the data and the saved villages.
+    rollupOptions: { input: { main: "index.html", combat: "combat.html", expansion: "expansion.html" } },
   },
   test: {
     include: ["src/**/*.test.ts"],

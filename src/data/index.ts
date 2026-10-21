@@ -1,4 +1,4 @@
-import type { Animal, Building, Celebration, Merchant, Unit, Wall } from "../types";
+import type { Animal, Building, Celebration, CultureData, Merchant, Unit, Wall } from "../types";
 import unitsJson from "./units.json";
 import buildingsJson from "./buildings.json";
 import merchantsJson from "./merchants.json";
@@ -6,6 +6,7 @@ import celebrationsJson from "./celebrations.json";
 import capacityJson from "./capacity.json";
 import wallsJson from "./walls.json";
 import natureJson from "./nature.json";
+import cultureJson from "./culture.json";
 
 /* JSON shapes are checked in data.test.ts. */
 /** Units per tribe. Order matters: saved state stores the unit index. */
@@ -23,3 +24,5 @@ export const WALLS = wallsJson as Record<string, Wall>;
 export const NATURE: Animal[] = natureJson;
 /** The `tribe` key armies of animals use in combat and parsed reports. */
 export const NATURE_TRIBE = "Nature";
+/** Helmets, daily quest and celebration culture points. */
+export const CULTURE = cultureJson as CultureData;

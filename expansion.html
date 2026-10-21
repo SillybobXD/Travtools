@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Expansion planner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23232820'/%3E%3Cpath d='M12 3.5l2.6 5.9 6.4.6-4.9 4.2 1.5 6.3L12 17l-5.6 3.5 1.5-6.3L3 10l6.4-.6z' fill='%23e0bd45'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-wood" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5.5 3h13a3.5 3.5 0 0 1 0 7h-13a3.5 3.5 0 0 1 0-7zm13 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM5.5 14h13a3.5 3.5 0 0 1 0 7h-13a3.5 3.5 0 0 1 0-7zm13 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></symbol>
+  <symbol id="i-clay" viewBox="0 0 24 24"><path d="M2 3h9v5H2zm11 0h9v5h-9zM2 10h4v5H2zm6 0h9v5H8zm11 0h3v5h-3zM2 17h9v4H2zm11 0h9v4h-9z"/></symbol>
+  <symbol id="i-iron" viewBox="0 0 24 24"><path d="M7 4h10l2.5 6h-15zM2 21l2.5-8h15L22 21z"/></symbol>
+  <symbol id="i-crop" viewBox="0 0 24 24"><path d="M11 9h2v13h-2z"/><ellipse cx="12" cy="4.5" rx="2" ry="3"/><ellipse cx="8.6" cy="9" rx="1.8" ry="3" transform="rotate(-35 8.6 9)"/><ellipse cx="15.4" cy="9" rx="1.8" ry="3" transform="rotate(35 15.4 9)"/><ellipse cx="8.6" cy="14.5" rx="1.8" ry="3" transform="rotate(-35 8.6 14.5)"/><ellipse cx="15.4" cy="14.5" rx="1.8" ry="3" transform="rotate(35 15.4 14.5)"/></symbol>
+  <symbol id="i-party" viewBox="0 0 24 24"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.7 7-6.3-3.9-6.3 3.9 1.7-7L2 9.2l7.1-.6z"/></symbol>
+  <symbol id="i-build" viewBox="0 0 24 24"><path d="M13.6 2.2 21.8 10.4l-2.9 2.9-1.8-1.8-9.6 9.6a2.1 2.1 0 0 1-3-3l9.6-9.6-1.8-1.8z"/></symbol>
+  <symbol id="i-village" viewBox="0 0 24 24"><path d="M12 2.5 2 11h3v10h5.5v-6h3v6H19V11h3z"/></symbol>
+  <symbol id="i-plan" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M9 2h6a1 1 0 0 1 1 1v1h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V3a1 1 0 0 1 1-1zm1 2v2h4V4zM7 10v2h10v-2zm0 4v2h7v-2z"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3zM4 18h16v3H4z"/></symbol>
+</svg>
+<main>
+  <nav class="top-nav" aria-label="Pages"><a href="./index.html">Village planner</a><a href="./combat.html">Combat</a><a href="./expansion.html" aria-current="page">Expansion</a></nav>
+  <h1>Expansion planner</h1>
+  <p class="lede">When your culture points allow the next village, and when to start the Residence and the settlers so they are ready right then.</p>
+
+  <details id="pasteBox">
+    <summary><svg class="ico" aria-hidden="true"><use href="#i-import"></use></svg>Paste the culture point pages</summary>
+    <p class="hint" style="margin-top:0">In the game, open Village overview, then Culture points. Select all, copy, and paste it here. Then do the same with the Culture points tab of your Residence or Palace. Each paste adds what it has.</p>
+    <label for="cultureText" class="gap">Copied page</label>
+    <textarea id="cultureText" rows="3" autocomplete="off" spellcheck="false"></textarea>
+    <p class="hint" id="pasteStatus"></p>
+  </details>
+
+  <section>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-party"></use></svg>Culture points</h2>
+    <div class="grid2">
+      <div><label for="cp">Produced so far</label><input id="cp" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="need">Next village at</label><input id="need" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <p class="hint" id="cpAtHint"></p>
+    <h3>Per day</h3>
+    <div class="grid3">
+      <div><label for="villages">All villages</label><input id="villages" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="hero">Hero helmet</label><select id="hero"></select></div>
+      <div><label for="alliance">Alliance bonus %</label><input id="alliance" inputmode="decimal" autocomplete="off"></div>
+    </div>
+    <p class="hint" id="totalHint"></p>
+  </section>
+
+  <section>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-party"></use></svg>Extra culture points</h2>
+    <label class="check plain"><input type="checkbox" id="quest"> <span id="questLabel">Daily quest reward</span></label>
+    <div class="grid2 gap" id="questBox"><div><label for="questAt">Next reward</label><input id="questAt" type="datetime-local"></div></div>
+    <h3>Celebrations and Artworks</h3>
+    <div id="events"></div>
+    <div class="inline">
+      <button type="button" id="addCeleb">Add celebration</button>
+      <button type="button" id="addArtwork">Add Artwork</button>
+    </div>
+    <p class="hint">A celebration's culture points come when it ends: small 500, at most the village's CP per day; great 2,000, at most the account's. An Artwork gives one day of the account's CP by default. Blank CP uses these defaults; neither rule is checked against the game yet.</p>
+  </section>
+
+  <section class="plan-card" aria-live="polite">
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-plan"></use></svg>Next village</h2>
+    <div id="forecast"></div>
+  </section>
+
+  <section>
+    <h2><svg class="ico" aria-hidden="true"><use href="#i-build"></use></svg>Residence and settlers</h2>
+    <div><label for="village">Village for the new slot</label><select id="village"></select></div>
+    <div class="seg gap" role="radiogroup" aria-label="Building">
+      <label><input type="radio" name="building" value="Residence">Residence</label>
+      <label><input type="radio" name="building" value="Palace">Palace</label>
+    </div>
+    <div class="grid2 gap">
+      <div><label for="level" id="levelLabel">Level now</label><input id="level" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+      <div><label for="used">Slots used</label><input id="used" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+    </div>
+    <div id="buildBox">
+      <p class="hint" id="slotHint"></p>
+      <div class="grid2 gap">
+        <div><label for="buildH" id="buildLabel">Build time, hours</label><input id="buildH" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+        <div><label for="buildM">and minutes</label><input id="buildM" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+      </div>
+      <p class="hint">All the upgrades together, as the game shows them in the Main Building. Build time isn't calculated yet.</p>
+    </div>
+    <div class="grid2 gap">
+      <div><label for="settlers">Settlers to train</label><input id="settlers" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <div id="schedule"></div>
+  </section>
+</main>
+
+<script type="module" src="/src/expansion.ts"></script>
+</body>
+</html>

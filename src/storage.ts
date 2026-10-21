@@ -111,6 +111,48 @@ export interface Store {
   overrides: Record<string, Record<string, UnitOverride>>;
   /** Combat page inputs; added by the combat page, older saves have none. */
   combat?: CombatState;
+  /** Expansion page inputs; added by the expansion page, older saves have none. */
+  culture?: CultureState;
+}
+
+/** A one-off culture point gain on the expansion page. Blank `cp` means the default for its kind. */
+export interface CultureEvent {
+  kind: "small" | "great" | "artwork";
+  /** When it happens (ms). */
+  at: number;
+  cp: string;
+  /** Game name of the celebrating village (its CP per day limits a small celebration). */
+  village?: string;
+}
+
+/** The expansion page's inputs, kept as typed. Account-wide. */
+export interface CultureState {
+  /** Culture points so far and the total the next village needs. */
+  cp: string;
+  need: string;
+  /** When `cp` was read or typed (ms); the forecast counts from then. */
+  cpAt?: number;
+  /** CP per day of all villages, the hero's, and the alliance bonus in percent. */
+  villages: string;
+  hero: string;
+  alliance: string;
+  /** What the game showed: its CP per day total and its estimate for the next village (ms). */
+  gameTotal?: number;
+  gameEstimate?: number;
+  quest: boolean;
+  /** Next daily quest culture point reward (ms). */
+  questAt?: number;
+  events: CultureEvent[];
+  /** From the overview's Culture points tab, by game name: CP per day and settlement slots used/total. */
+  villageCp: Record<string, { cp: number; slots?: [number, number] }>;
+  /** Saved village that gets the new slot and trains the settlers. */
+  village: string;
+  building: "Residence" | "Palace";
+  level: string;
+  used: string;
+  buildH: string;
+  buildM: string;
+  settlers: string;
 }
 
 const blank10 = () => Array.from({ length: 10 }, () => "");
@@ -138,6 +180,23 @@ export function combatOf(store: Store): CombatState {
   c.lootRes = [0, 1, 2, 3].map(i => c.lootRes?.[i] ?? "");
   if (!store.villages[c.village]) c.village = store.current;
   store.combat = c;
+  return c;
+}
+
+export function newCultureState(village: string): CultureState {
+  return {
+    cp: "", need: "", villages: "", hero: "0", alliance: "", quest: false, events: [], villageCp: {},
+    village, building: "Residence", level: "", used: "", buildH: "", buildM: "", settlers: "3",
+  };
+}
+
+/** The store's expansion state, created or completed with defaults so older saves load. */
+export function cultureOf(store: Store): CultureState {
+  const c: CultureState = { ...newCultureState(store.current), ...(store.culture ?? {}) };
+  c.events = (c.events ?? []).filter(e => typeof e.at === "number");
+  c.villageCp ??= {};
+  if (!store.villages[c.village]) c.village = store.current;
+  store.culture = c;
   return c;
 }
 

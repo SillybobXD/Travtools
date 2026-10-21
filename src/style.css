@@ -164,3 +164,10 @@ td .ico { width: 1em; height: 1em; margin-right: 0.2em; }
 .notes { margin-top: 14px; }
 .army details { background: none; border: 0; border-radius: 0; padding: 0; margin: 12px 0 0; }
 .army details summary { font-size: 1rem; }
+
+/* Expansion page */
+ul.list { margin: 6px 0 0; padding-left: 1.2em; }
+ul.list li { margin: 2px 0; }
+/* Text cells wrap so the tables fit 375px; numbers stay on one line. */
+table.fit td { white-space: normal; overflow-wrap: anywhere; }
+table.fit td:last-child { white-space: nowrap; }

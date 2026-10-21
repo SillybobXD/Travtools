@@ -1,0 +1,13 @@
+{
+  "helmets": [
+    {"name":"No CP helmet","cpPerDay":0},
+    {"name":"Helmet of the Gladiator (tier 1)","cpPerDay":100},
+    {"name":"Helmet of the Gladiator (tier 2)","cpPerDay":400},
+    {"name":"Helmet of the Gladiator (tier 3)","cpPerDay":1600}
+  ],
+  "dailyQuest": {"cp":400,"everyDays":4},
+  "celebrations": [
+    {"name":"Small celebration","cp":500,"capBy":"village"},
+    {"name":"Great celebration","cp":2000,"capBy":"account"}
+  ]
+}
